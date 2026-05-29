@@ -246,8 +246,8 @@
       
       const reader = new FileReader();
       
-      // Leer los primeros 46 bytes de la cabecera
-      const headerBlob = file.slice(0, 46);
+      // Leer los primeros 47 bytes de la cabecera (GRF 2.0 estándar)
+      const headerBlob = file.slice(0, 47);
       reader.onload = function(e) {
         const buffer = e.target.result;
         const view = new DataView(buffer);
@@ -265,11 +265,11 @@
           return;
         }
 
-        // 2. Leer offsets
-        const fileTableOffset = view.getInt32(30, true);
-        const seed = view.getInt32(34, true);
-        const filesCount = view.getInt32(38, true) - seed - 7;
-        const version = view.getInt32(42, true);
+        // 2. Leer offsets (desplazamiento corregido por 1 byte)
+        const fileTableOffset = view.getInt32(31, true);
+        const seed = view.getInt32(35, true);
+        const filesCount = view.getInt32(39, true) - seed - 7;
+        const version = view.getInt32(43, true);
 
         // Actualizar UI
         document.getElementById('meta-magic').textContent = magic;
