@@ -1,0 +1,235 @@
+{
+  "accounts": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "admin",
+      "gm": true
+    },
+    {
+      "id": 2,
+      "username": "user",
+      "password": "user",
+      "gm": false
+    }
+  ],
+  "characters": [
+    {
+      "id": 1,
+      "accountId": 1,
+      "name": "riu",
+      "gender": "M",
+      "hair": 1,
+      "hairColor": 3,
+      "job": "Novice",
+      "baseLevel": 1,
+      "jobLevel": 1,
+      "baseExp": 15,
+      "jobExp": 10,
+      "hp": 223,
+      "maxHp": 223,
+      "sp": 78,
+      "maxSp": 78,
+      "str": 9,
+      "agi": 9,
+      "vit": 9,
+      "int": 9,
+      "dex": 9,
+      "luk": 9,
+      "statPoints": 0,
+      "skillPoints": 0,
+      "map": "prontera",
+      "x": 19,
+      "y": 10,
+      "inventory": [
+        {
+          "itemId": 501,
+          "count": 5,
+          "equipped": false
+        },
+        {
+          "itemId": 1201,
+          "count": 1,
+          "equipped": false
+        }
+      ],
+      "equipment": {
+        "weapon": null,
+        "headgear": null
+      },
+      "skills": {
+        "double_strafe": 0,
+        "bash": 0,
+        "fire_bolt": 0,
+        "heal": 0
+      },
+      "atk": 13,
+      "matk": 16,
+      "def": 4,
+      "flee": 11,
+      "hit": 60,
+      "speed": 189.2,
+      "type": "player"
+    }
+  ],
+  "mobs_db": {
+    "1001": {
+      "id": 1001,
+      "name": "Poring",
+      "level": 1,
+      "hp": 60,
+      "maxHp": 60,
+      "atk": 6,
+      "def": 2,
+      "flee": 5,
+      "hit": 20,
+      "exp": 15,
+      "jobExp": 10,
+      "moveSpeed": 350,
+      "attackSpeed": 1500,
+      "scale": 1,
+      "drops": [
+        {
+          "itemId": 501,
+          "chance": 0.5
+        },
+        {
+          "itemId": 2201,
+          "chance": 0.05
+        }
+      ]
+    },
+    "1002": {
+      "id": 1002,
+      "name": "Lunatic",
+      "level": 3,
+      "hp": 90,
+      "maxHp": 90,
+      "atk": 10,
+      "def": 4,
+      "flee": 10,
+      "hit": 25,
+      "exp": 25,
+      "jobExp": 18,
+      "moveSpeed": 280,
+      "attackSpeed": 1200,
+      "scale": 1,
+      "drops": [
+        {
+          "itemId": 501,
+          "chance": 0.4
+        },
+        {
+          "itemId": 2202,
+          "chance": 0.08
+        }
+      ]
+    },
+    "1003": {
+      "id": 1003,
+      "name": "Baphomet Jr",
+      "level": 15,
+      "hp": 650,
+      "maxHp": 650,
+      "atk": 45,
+      "def": 12,
+      "flee": 30,
+      "hit": 50,
+      "exp": 250,
+      "jobExp": 180,
+      "moveSpeed": 180,
+      "attackSpeed": 800,
+      "scale": 1.2,
+      "drops": [
+        {
+          "itemId": 502,
+          "chance": 0.6
+        },
+        {
+          "itemId": 1301,
+          "chance": 0.1
+        }
+      ]
+    }
+  },
+  "items_db": {
+    "501": {
+      "id": 501,
+      "name": "Poción Roja",
+      "type": "consume",
+      "effect": "heal_hp",
+      "value": 50,
+      "description": "Una poción roja que restaura unos 50 HP al consumirse.",
+      "price": 50,
+      "sprite": "red_potion"
+    },
+    "502": {
+      "id": 502,
+      "name": "Poción Naranja",
+      "type": "consume",
+      "effect": "heal_hp",
+      "value": 120,
+      "description": "Una poción naranja amarga que restaura unos 120 HP al consumirse.",
+      "price": 150,
+      "sprite": "orange_potion"
+    },
+    "1201": {
+      "id": 1201,
+      "name": "Cuchillo de Aprendiz [3]",
+      "type": "equip",
+      "slot": "weapon",
+      "atk": 15,
+      "matk": 0,
+      "requiredJob": "Novice",
+      "description": "Un pequeño cuchillo entregado a todos los novatos en Rune-Midgard. ATK +15.",
+      "price": 100,
+      "sprite": "knife"
+    },
+    "1301": {
+      "id": 1301,
+      "name": "Espada de Acero [1]",
+      "type": "equip",
+      "slot": "weapon",
+      "atk": 38,
+      "matk": 0,
+      "requiredJob": "Swordman",
+      "description": "Una espada de acero forjada por herreros de Prontera. ATK +38.",
+      "price": 1200,
+      "sprite": "sword"
+    },
+    "1601": {
+      "id": 1601,
+      "name": "Bastón Mágico [2]",
+      "type": "equip",
+      "slot": "weapon",
+      "atk": 10,
+      "matk": 32,
+      "requiredJob": "Mage",
+      "description": "Un bastón de madera con un cristal incrustado que canaliza la magia. ATK +10, MATK +32.",
+      "price": 1500,
+      "sprite": "staff"
+    },
+    "2201": {
+      "id": 2201,
+      "name": "Gorro de Poring",
+      "type": "equip",
+      "slot": "headgear",
+      "def": 2,
+      "luk": 2,
+      "description": "Un adorable sombrero de felpa que imita la forma de un Poring. DEF +2, LUK +2.",
+      "price": 5000,
+      "sprite": "poring_hat"
+    },
+    "2202": {
+      "id": 2202,
+      "name": "Cinta Roja",
+      "type": "equip",
+      "slot": "headgear",
+      "def": 1,
+      "mdef": 3,
+      "description": "Una cinta de seda roja brillante que te hace lucir adorable. DEF +1, MDEF +3.",
+      "price": 3000,
+      "sprite": "ribbon"
+    }
+  }
+}

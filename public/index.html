@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRO - Ragnarok Online de Navegador</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/launcher.css">
+</head>
+<body>
+
+  <!-- Animación de Fondo Dinámica (Nubes y Cielo Clásico) -->
+  <div class="sky-background">
+    <div class="cloud cloud-1"></div>
+    <div class="cloud cloud-2"></div>
+    <div class="cloud cloud-3"></div>
+  </div>
+
+  <div class="launcher-container">
+    <!-- Encabezado / Logo Premium -->
+    <header class="launcher-header animate-fade-in">
+      <div class="logo-text">Web<span>RO</span></div>
+      <p class="tagline">Ragnarok Online Classic - HTML5 Experience</p>
+    </header>
+
+    <!-- Caja de Estados del Servidor -->
+    <div class="server-status animate-fade-in delay-1">
+      <div class="status-indicator">
+        <span class="status-dot online"></span>
+        <span class="status-text">Servidor: <strong id="srv-state">Online</strong></span>
+      </div>
+      <div class="status-ping">Latencia: <span id="srv-ping">-- ms</span></div>
+      <div class="status-players">Jugadores: <span id="srv-players">--</span></div>
+      <button onclick="window.location.href='grf_explorer.html'" class="btn" style="padding: 6px 12px; font-size: 0.75rem; flex: none; width: auto; margin: 0; background: var(--primary);">Cargar data.grf</button>
+    </div>
+
+    <!-- SECCIÓN 1: Autenticación (Login / Registro) -->
+    <div id="auth-panel" class="launcher-card animate-fade-in delay-2">
+      <h2 id="auth-title">Iniciar Sesión</h2>
+      
+      <div class="input-group">
+        <label for="username">Usuario</label>
+        <input type="text" id="username" placeholder="Ingresa tu usuario" autocomplete="off">
+      </div>
+
+      <div class="input-group">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" placeholder="••••••••">
+      </div>
+
+      <div class="btn-group">
+        <button id="btn-login" class="btn btn-primary">Entrar al Servidor</button>
+        <button id="btn-toggle-register" class="btn btn-secondary">Crear Cuenta</button>
+      </div>
+
+      <p class="auth-message error" id="auth-error-msg"></p>
+      <p class="auth-message success" id="auth-success-msg"></p>
+    </div>
+
+    <!-- SECCIÓN 2: Selección de Personaje -->
+    <div id="char-panel" class="launcher-card animate-fade-in hidden">
+      <h2>Selección de Personaje</h2>
+      <p class="card-subtitle">Elige tu personaje para ingresar al continente de Midgard</p>
+
+      <div class="char-slots-container" id="char-slots">
+        <!-- Ranuras de personajes renderizadas dinámicamente -->
+      </div>
+
+      <div class="btn-group">
+        <button id="btn-enter-game" class="btn btn-primary disabled" disabled>Comenzar Aventura</button>
+        <button id="btn-create-char-nav" class="btn btn-secondary">Nuevo Personaje</button>
+        <button id="btn-logout" class="btn btn-danger">Desconectar</button>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 3: Creación de Personaje -->
+    <div id="create-panel" class="launcher-card animate-fade-in hidden">
+      <h2>Crear Personaje</h2>
+      <p class="card-subtitle">Diseña tu héroe y reparte tus puntos iniciales</p>
+
+      <div class="create-grid">
+        <!-- Columna Izquierda: Apariencia -->
+        <div class="create-appearance">
+          <div class="input-group">
+            <label>Nombre del Personaje</label>
+            <input type="text" id="new-char-name" placeholder="Ej. LordNovice" maxlength="12" autocomplete="off">
+          </div>
+
+          <div class="input-group">
+            <label>Género</label>
+            <div class="gender-selector">
+              <button class="gender-btn active" data-gender="M">Masculino</button>
+              <button class="gender-btn" data-gender="F">Femenino</button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label>Peinado</label>
+            <div class="selector-arrows">
+              <button id="prev-hair" class="arrow-btn">&lt;</button>
+              <span id="hair-style-label">Estilo 1</span>
+              <button id="next-hair" class="arrow-btn">&gt;</button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label>Color de Pelo</label>
+            <div class="hair-color-palette">
+              <button class="color-dot active" data-color="0" style="background-color: #ffd480;"></button>
+              <button class="color-dot" data-color="1" style="background-color: #ff8080;"></button>
+              <button class="color-dot" data-color="2" style="background-color: #80c4ff;"></button>
+              <button class="color-dot" data-color="3" style="background-color: #c480ff;"></button>
+              <button class="color-dot" data-color="4" style="background-color: #80ff80;"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Estadísticas (Stats 48 pts clásicos) -->
+        <div class="create-stats">
+          <div class="stats-header">
+            <span>Atributos</span>
+            <span class="pts-remaining">Puntos Libres: <strong id="stat-points-left">48</strong></span>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">STR <small>(Fuerza)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="str">-</button>
+              <span class="stat-val" id="stat-str">1</span>
+              <button class="stat-btn plus" data-stat="str">+</button>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">AGI <small>(Agilidad)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="agi">-</button>
+              <span class="stat-val" id="stat-agi">1</span>
+              <button class="stat-btn plus" data-stat="agi">+</button>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">VIT <small>(Vitalidad)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="vit">-</button>
+              <span class="stat-val" id="stat-vit">1</span>
+              <button class="stat-btn plus" data-stat="vit">+</button>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">INT <small>(Inteligencia)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="int">-</button>
+              <span class="stat-val" id="stat-int">1</span>
+              <button class="stat-btn plus" data-stat="int">+</button>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">DEX <small>(Destreza)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="dex">-</button>
+              <span class="stat-val" id="stat-dex">1</span>
+              <button class="stat-btn plus" data-stat="dex">+</button>
+            </div>
+          </div>
+
+          <div class="stat-row">
+            <span class="stat-name">LUK <small>(Suerte)</small></span>
+            <div class="stat-controls">
+              <button class="stat-btn minus" data-stat="luk">-</button>
+              <span class="stat-val" id="stat-luk">1</span>
+              <button class="stat-btn plus" data-stat="luk">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="auth-message error" id="create-error-msg"></p>
+
+      <div class="btn-group">
+        <button id="btn-submit-char" class="btn btn-primary">Crear Héroe</button>
+        <button id="btn-cancel-create" class="btn btn-secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="launcher-footer animate-fade-in delay-3">
+    Desarrollado en HTML5 Canvas e isometric 2.5D. Inspirado en Ragnarok Online (Gravity Co., Ltd.). &copy; 2026 WebRO.
+  </footer>
+
+  <!-- Scripts -->
+  <script src="js/engine/sound.js"></script>
+  <script src="js/launcher.js"></script>
+</body>
+</html>

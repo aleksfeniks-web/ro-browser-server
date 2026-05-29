@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRO - Midgard HTML5</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+  <!-- Canvas Principal de Renderizado del Juego -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Pantalla de Carga (Loading Overlay) -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-content">
+      <div class="logo-spinner">Web<span>RO</span></div>
+      <div class="loading-bar-container">
+        <div class="loading-bar" id="load-progress"></div>
+      </div>
+      <p id="load-status">Cargando celdas del mapa...</p>
+    </div>
+  </div>
+
+  <!-- HUD Y VENTANAS DEL JUEGO (Arrastrables estilo RO clásico) -->
+
+  <!-- 1. Ventana de Información Básica (Basic Info) -->
+  <div id="win-basic" class="ro-window" style="top: 20px; left: 20px; width: 280px;">
+    <div class="win-header">
+      <span class="win-title">Información Básica</span>
+      <button class="win-minimize-btn" onclick="toggleWindow('win-basic')">-</button>
+    </div>
+    <div class="win-body">
+      <div class="info-row">
+        <span class="char-label" id="hud-name">LordNovice</span>
+        <span class="char-class-label" id="hud-job">Novice</span>
+      </div>
+      <div class="bar-container">
+        <span class="bar-text">HP: <span id="hud-hp">100/100</span></span>
+        <div class="bar-fill hp" id="bar-hp" style="width: 100%;"></div>
+      </div>
+      <div class="bar-container">
+        <span class="bar-text">SP: <span id="hud-sp">30/30</span></span>
+        <div class="bar-fill sp" id="bar-sp" style="width: 100%;"></div>
+      </div>
+      <div class="bar-container">
+        <span class="bar-text">Base Exp: <span id="hud-base-exp">0%</span></span>
+        <div class="bar-fill base-exp" id="bar-base-exp" style="width: 0%;"></div>
+      </div>
+      <div class="bar-container">
+        <span class="bar-text">Job Exp: <span id="hud-job-exp">0%</span></span>
+        <div class="bar-fill job-exp" id="bar-job-exp" style="width: 0%;"></div>
+      </div>
+      <!-- Panel de Control Rápido del HUD -->
+      <div class="hud-quick-buttons">
+        <button onclick="toggleWindow('win-status')" title="Atributos (Alt+A)">EST</button>
+        <button onclick="toggleWindow('win-inventory')" title="Inventario (Alt+E)">INV</button>
+        <button onclick="toggleWindow('win-skills')" title="Habilidades (Alt+S)">HAB</button>
+        <button onclick="showGMCommandsHelp()" title="Ayuda GM">GM</button>
+        <button onclick="exitGame()" title="Desconectarse">SALIR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Ventana de Atributos (Status / Stats) -->
+  <div id="win-status" class="ro-window hidden" style="top: 250px; left: 20px; width: 280px;">
+    <div class="win-header">
+      <span class="win-title">Atributos del Personaje</span>
+      <button class="win-close-btn" onclick="toggleWindow('win-status')">x</button>
+    </div>
+    <div class="win-body">
+      <div class="status-points-bar">
+        Puntos Disponibles: <strong id="stat-points-avail">0</strong>
+      </div>
+      
+      <div class="stat-list">
+        <div class="stat-item">
+          <span>STR <small>(Fuerza)</small></span>
+          <span class="stat-value" id="stat-val-str">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('str')">+</button>
+        </div>
+        <div class="stat-item">
+          <span>AGI <small>(Agilidad)</small></span>
+          <span class="stat-value" id="stat-val-agi">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('agi')">+</button>
+        </div>
+        <div class="stat-item">
+          <span>VIT <small>(Vitalidad)</small></span>
+          <span class="stat-value" id="stat-val-vit">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('vit')">+</button>
+        </div>
+        <div class="stat-item">
+          <span>INT <small>(Inteligencia)</small></span>
+          <span class="stat-value" id="stat-val-int">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('int')">+</button>
+        </div>
+        <div class="stat-item">
+          <span>DEX <small>(Destreza)</small></span>
+          <span class="stat-value" id="stat-val-dex">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('dex')">+</button>
+        </div>
+        <div class="stat-item">
+          <span>LUK <small>(Suerte)</small></span>
+          <span class="stat-value" id="stat-val-luk">1</span>
+          <button class="btn-stat-plus" onclick="addStatPoint('luk')">+</button>
+        </div>
+      </div>
+
+      <hr class="win-divider">
+
+      <!-- Estadísticas Secundarias Calculadas -->
+      <div class="sub-stats-grid">
+        <div>ATK: <span id="stat-atk">0</span></div>
+        <div>DEF: <span id="stat-def">0</span></div>
+        <div>MATK: <span id="stat-matk">0</span></div>
+        <div>FLEE: <span id="stat-flee">0</span></div>
+        <div>HIT: <span id="stat-hit">0</span></div>
+        <div>LVL: <span id="stat-lvl">1</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Ventana de Inventario (Inventory) -->
+  <div id="win-inventory" class="ro-window hidden" style="top: 20px; right: 320px; width: 280px;">
+    <div class="win-header">
+      <span class="win-title">Inventario</span>
+      <button class="win-close-btn" onclick="toggleWindow('win-inventory')">x</button>
+    </div>
+    <div class="win-body">
+      <!-- Pestañas de inventario -->
+      <div class="inventory-tabs">
+        <button class="inv-tab active" onclick="switchInventoryTab('consume')">Consumibles</button>
+        <button class="inv-tab" onclick="switchInventoryTab('equip')">Equipo</button>
+      </div>
+
+      <!-- Contenedor de Items -->
+      <div class="item-list-container" id="inventory-items">
+        <!-- Ítems agregados dinámicamente -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Ventana de Habilidades (Skills Tree) -->
+  <div id="win-skills" class="ro-window hidden" style="top: 250px; right: 320px; width: 280px;">
+    <div class="win-header">
+      <span class="win-title">Habilidades</span>
+      <button class="win-close-btn" onclick="toggleWindow('win-skills')">x</button>
+    </div>
+    <div class="win-body">
+      <div class="status-points-bar">
+        Puntos de Skill: <strong id="skill-points-avail">0</strong>
+      </div>
+      <div class="skill-list-container" id="skill-list">
+        <!-- Habilidades agregadas dinámicamente según la clase -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Minimapa (Top Right) -->
+  <div id="win-minimap" class="ro-window" style="top: 20px; right: 20px; width: 180px;">
+    <div class="win-header">
+      <span class="win-title" id="map-display-name">Prontera</span>
+      <button class="win-minimize-btn" onclick="toggleWindow('win-minimap')">-</button>
+    </div>
+    <div class="win-body no-padding" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+      <!-- Canvas de dibujo del minimapa -->
+      <canvas id="minimap-canvas" width="160" height="160" style="background-color: #000; border-radius: 6px; margin: 8px;"></canvas>
+      <div class="coordinates-label" id="coord-label" style="font-size: 0.75rem; color: #94a3b8; font-weight: 600; padding-bottom: 8px;">X: 15, Y: 15</div>
+    </div>
+  </div>
+
+  <!-- 6. Barra de Hotkeys / Accesos Rápidos (F1-F9) -->
+  <div id="hotkey-bar" class="hotkey-bar">
+    <div class="hotkey-slot" data-key="1" id="hk-1">
+      <span class="hk-label">F1</span>
+      <div class="hk-icon" id="hk-icon-1"></div>
+    </div>
+    <div class="hotkey-slot" data-key="2" id="hk-2">
+      <span class="hk-label">F2</span>
+      <div class="hk-icon" id="hk-icon-2"></div>
+    </div>
+    <div class="hotkey-slot" data-key="3" id="hk-3">
+      <span class="hk-label">F3</span>
+      <div class="hk-icon" id="hk-icon-3"></div>
+    </div>
+    <div class="hotkey-slot" data-key="4" id="hk-4">
+      <span class="hk-label">F4</span>
+      <div class="hk-icon" id="hk-icon-4"></div>
+    </div>
+    <div class="hotkey-slot" data-key="5" id="hk-5">
+      <span class="hk-label">F5</span>
+      <div class="hk-icon" id="hk-icon-5"></div>
+    </div>
+    <div class="hotkey-slot" data-key="6" id="hk-6">
+      <span class="hk-label">F6</span>
+      <div class="hk-icon" id="hk-icon-6"></div>
+    </div>
+    <div class="hotkey-slot" data-key="7" id="hk-7">
+      <span class="hk-label">F7</span>
+      <div class="hk-icon" id="hk-icon-7"></div>
+    </div>
+    <div class="hotkey-slot" data-key="8" id="hk-8">
+      <span class="hk-label">F8</span>
+      <div class="hk-icon" id="hk-icon-8"></div>
+    </div>
+    <div class="hotkey-slot" data-key="9" id="hk-9">
+      <span class="hk-label">F9</span>
+      <div class="hk-icon" id="hk-icon-9"></div>
+    </div>
+  </div>
+
+  <!-- 7. Consola de Chat / Log (Bottom Left) -->
+  <div id="win-chat" class="win-chat">
+    <div class="chat-log" id="chat-log-box">
+      <div class="chat-system">¡Bienvenido a WebRO! Haz clic en el mapa para moverte, o clic en un monstruo para atacarlo.</div>
+    </div>
+    <div class="chat-input-area">
+      <input type="text" id="chat-input-box" placeholder="Escribe aquí para hablar..." autocomplete="off">
+      <button id="btn-chat-send" class="btn-chat-send">Enviar</button>
+    </div>
+  </div>
+
+  <!-- Modal para Ayuda GM -->
+  <div id="modal-gm-help" class="modal-overlay hidden" onclick="closeGMHelp()">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <h3>Comandos GM Disponibles</h3>
+      <p>Al ser administrador, puedes escribir estos comandos directamente en el Chat:</p>
+      <ul>
+        <li><code>/spawn [mob_id] [cantidad]</code> - Invoca monstruos en tu celda. Ej: <code>/spawn 1001 5</code> (1001: Poring, 1002: Lunatic, 1003: Baphomet Jr).</li>
+        <li><code>/warp [map_name] [x] [y]</code> - Teletransporte. Ej: <code>/warp prt_fild08 15 15</code> o <code>/warp prontera 15 15</code>.</li>
+        <li><code>/item [item_id] [cantidad]</code> - Añade un ítem. Ej: <code>/item 2201 1</code> (2201: Gorro de Poring, 1301: Espada, 501: Poción).</li>
+        <li><code>/heal</code> - Sana por completo tu vida (HP) y magia (SP).</li>
+        <li><code>/baselevel [lvl]</code> - Cambia tu nivel base.</li>
+        <li><code>/joblevel [lvl]</code> - Cambia tu nivel job.</li>
+        <li><code>/job [Swordman|Mage|Novice]</code> - Cambia tu clase.</li>
+      </ul>
+      <button class="btn btn-primary" onclick="closeGMHelp()">Entendido</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/engine/sound.js"></script>
+  <script src="js/engine/pathfinding.js"></script>
+  <script src="js/engine/camera.js"></script>
+  <script src="js/engine/map.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

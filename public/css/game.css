@@ -1,0 +1,732 @@
+/* ==========================================================================
+   WebRO - Game HUD Stylesheet (Classic Ragnarok Glassmorphism Skin)
+   ========================================================================== */
+
+:root {
+  --win-bg: rgba(15, 23, 42, 0.75);
+  --win-border: rgba(255, 255, 255, 0.1);
+  --win-header-bg: rgba(83, 142, 245, 0.25);
+  --win-header-border: rgba(83, 142, 245, 0.4);
+  --primary: #538ef5;
+  --primary-hover: #3d79e0;
+  
+  --hp-bar: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  --sp-bar: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+  --base-exp-bar: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  --job-exp-bar: linear-gradient(90deg, #a855f7 0%, #7c3aed 100%);
+  
+  --font-body: 'Inter', sans-serif;
+  --font-title: 'Outfit', 'Inter', sans-serif;
+  --text-color: #f1f5f9;
+  --text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-body);
+  background-color: #0b0f19;
+  color: var(--text-color);
+}
+
+/* --- Game Canvas --- */
+#game-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+}
+
+/* --- Loading Overlay --- */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at center, #1e293b 0%, #0b0f19 100%);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.5s ease;
+}
+
+.loading-content {
+  text-align: center;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.logo-spinner {
+  font-family: var(--font-title);
+  font-size: 3rem;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(83, 142, 245, 0.4);
+  animation: logoPulse 1.5s ease-in-out infinite alternate;
+}
+
+.logo-spinner span {
+  color: var(--primary);
+}
+
+@keyframes logoPulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  100% { transform: scale(1.05); opacity: 1; }
+}
+
+.loading-bar-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.loading-bar {
+  height: 100%;
+  width: 10%;
+  background: linear-gradient(90deg, var(--primary) 0%, #3b82f6 100%);
+  box-shadow: 0 0 10px rgba(83,142,245,0.5);
+  transition: width 0.3s ease;
+}
+
+#load-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* --- Floating Windows (HUD) --- */
+.ro-window {
+  position: absolute;
+  background: var(--win-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--win-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.15s ease;
+}
+
+.ro-window.hidden, .hidden {
+  display: none !important;
+}
+
+.win-header {
+  background: var(--win-header-bg);
+  border-bottom: 1px solid var(--win-header-border);
+  padding: 8px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+  font-family: var(--font-title);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.3px;
+}
+
+.win-title {
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.win-minimize-btn, .win-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.win-minimize-btn:hover, .win-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.win-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.win-body.no-padding {
+  padding: 0;
+}
+
+.win-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 2px 0;
+}
+
+/* --- Basic Info & Bars --- */
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.char-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.char-class-label {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.bar-container {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.bar-text {
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 16px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  z-index: 2;
+}
+
+.bar-fill {
+  height: 100%;
+  width: 0%;
+  transition: width 0.25s ease-out;
+  z-index: 1;
+}
+
+.bar-fill.hp { background: var(--hp-bar); }
+.bar-fill.sp { background: var(--sp-bar); }
+.bar-fill.base-exp { background: var(--base-exp-bar); }
+.bar-fill.job-exp { background: var(--job-exp-bar); }
+
+.hud-quick-buttons {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.hud-quick-buttons button {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-quick-buttons button:hover {
+  background: rgba(83, 142, 245, 0.15);
+  border-color: rgba(83, 142, 245, 0.25);
+  color: #fff;
+}
+
+/* --- Status Window --- */
+.status-points-bar {
+  background: rgba(83, 142, 245, 0.1);
+  border: 1px dashed rgba(83, 142, 245, 0.2);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.status-points-bar strong {
+  color: var(--primary);
+}
+
+.stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.stat-item span {
+  font-weight: 500;
+}
+
+.stat-item small {
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-family: var(--font-title);
+  font-weight: 600;
+  margin-left: auto;
+  margin-right: 14px;
+}
+
+.btn-stat-plus {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn-stat-plus:hover {
+  background: var(--primary);
+  border-color: var(--primary-hover);
+}
+
+.sub-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 15px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sub-stats-grid span {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* --- Inventory Window & Item list --- */
+.inventory-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 5px;
+}
+
+.inv-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 8px 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.inv-tab:hover {
+  color: #fff;
+}
+
+.inv-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.item-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.item-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.item-row.equipped {
+  border-color: rgba(83, 142, 245, 0.4);
+  background: rgba(83, 142, 245, 0.08);
+}
+
+.item-icon-wrapper {
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.item-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.item-desc {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.item-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-left: auto;
+}
+
+.item-equipped-tag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  background: var(--primary);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* --- Habilidades (Skills Tree) --- */
+.skill-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.skill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.skill-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.skill-icon-wrapper {
+  width: 28px;
+  height: 28px;
+  background: rgba(83, 142, 245, 0.1);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  border: 1px solid rgba(83, 142, 245, 0.2);
+}
+
+.skill-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.skill-desc {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.skill-level-lbl {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-left: auto;
+  margin-right: 6px;
+}
+
+/* --- Hotkey Bar (F1-F9) --- */
+.hotkey-bar {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--win-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--win-border);
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  gap: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  z-index: 99;
+}
+
+.hotkey-slot {
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hotkey-slot:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.hk-label {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.hk-icon {
+  font-size: 1.3rem;
+  pointer-events: none;
+}
+
+/* --- Chat Log & Panel --- */
+.win-chat {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  width: 400px;
+  background: var(--win-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--win-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  z-index: 98;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-log {
+  height: 120px;
+  padding: 10px 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.chat-normal { color: #f1f5f9; }
+.chat-normal strong { color: var(--primary); }
+.chat-system { color: #34d399; font-weight: 500; }
+.chat-combat { color: #f87171; }
+
+.chat-input-area {
+  display: flex;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+#chat-input-box {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.btn-chat-send {
+  background: var(--primary);
+  border: none;
+  color: #fff;
+  padding: 0 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-chat-send:hover {
+  background: var(--primary-hover);
+}
+
+/* --- Scrollbars Personalizados --- */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* --- Modales --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-card {
+  background: var(--win-bg);
+  border: 1px solid var(--win-border);
+  border-radius: 16px;
+  padding: 30px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 10px 35px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.modal-card h3 {
+  font-family: var(--font-title);
+  font-size: 1.3rem;
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding-bottom: 8px;
+}
+
+.modal-card ul {
+  list-style: none;
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.modal-card code {
+  color: var(--primary);
+  background: rgba(83, 142, 245, 0.12);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+/* --- GM Helper Button / Quick elements --- */
+.btn {
+  font-family: var(--font-title);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+}

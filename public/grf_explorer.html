@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRO - Explorador de data.grf Oficial</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- Pako (Zlib descompressor for GRF file table extraction) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/launcher.css">
+  <style>
+    .explorer-card {
+      max-width: 900px;
+      width: 95%;
+      margin: 40px auto;
+    }
+    .drop-zone {
+      border: 2px dashed rgba(83, 142, 245, 0.4);
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.3);
+      cursor: pointer;
+      transition: all 0.25s ease;
+      margin-bottom: 20px;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      background: rgba(83, 142, 245, 0.08);
+      border-color: var(--primary);
+    }
+    .file-input {
+      display: none;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 15px;
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .meta-lbl {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .meta-val {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .search-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .search-input {
+      flex: 1;
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 10px 15px;
+      color: #fff;
+      font-family: var(--font-body);
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+    .files-table-container {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.25);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 10px 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    th {
+      background: rgba(83, 142, 245, 0.15);
+      color: #fff;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    tr:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .btn-extract {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .btn-extract:hover {
+      background: var(--primary-hover);
+    }
+    .back-btn-nav {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 100;
+      padding: 8px 16px;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="btn btn-secondary back-btn-nav" onclick="window.location.href='index.html'">&lt; Volver al Launcher</button>
+
+  <div class="sky-background">
+    <div class="cloud cloud-1"></div>
+    <div class="cloud cloud-2"></div>
+  </div>
+
+  <div class="launcher-container explorer-card">
+    <header class="launcher-header animate-fade-in">
+      <div class="logo-text">Web<span>GRF</span></div>
+      <p class="tagline">Explorador y Lector de data.grf del Cliente Original</p>
+    </header>
+
+    <!-- Zona de Drop de Archivo -->
+    <div id="drop-zone" class="drop-zone animate-fade-in delay-1">
+      <span style="font-size: 2.5rem; margin-bottom: 10px; display: block;">📂</span>
+      <h3>Arrastra tu archivo <strong>data.grf</strong> aquí</h3>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 5px;">
+        Se encuentra en la carpeta extraída <code>C:\\Users\\nh250032\\Downloads\\RagnarokMéxicoV1</code>.<br>
+        El procesamiento se realiza <strong>100% en tu computadora local</strong>. ¡Ningún dato es subido al servidor!
+      </p>
+      <button class="btn btn-secondary" style="margin-top: 15px; padding: 8px 16px; font-size: 0.8rem;">Seleccionar Archivo Manualmente</button>
+      <input type="file" id="file-input" class="file-input" accept=".grf">
+    </div>
+
+    <!-- Metadatos de la Cabecera -->
+    <div id="meta-panel" class="meta-grid animate-fade-in hidden">
+      <div class="meta-item">
+        <span class="meta-lbl">Firma del Archivo</span>
+        <span class="meta-val" id="meta-magic">--</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-lbl">Versión GRF</span>
+        <span class="meta-val" id="meta-version">--</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-lbl">Archivos Declarados</span>
+        <span class="meta-val" id="meta-count">--</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-lbl">Tamaño de Tabla</span>
+        <span class="meta-val" id="meta-size">-- KB</span>
+      </div>
+    </div>
+
+    <!-- Buscador y Tabla -->
+    <div id="explore-panel" class="launcher-card animate-fade-in hidden" style="padding: 20px;">
+      <div class="search-row">
+        <input type="text" id="search-input" class="search-input" placeholder="Buscar archivos (ej: poring.spr, prontera.rsw, mp3)...">
+        <button id="btn-search" class="btn btn-primary" style="padding: 0 20px; font-size: 0.85rem;">Buscar</button>
+      </div>
+
+      <div class="files-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Ruta del Archivo Oficial</th>
+              <th>Tamaño Comprimido</th>
+              <th>Tamaño Real</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="files-tbody">
+            <!-- Entradas agregadas dinámicamente -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lógica de Lectura Binaria Local -->
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const metaPanel = document.getElementById('meta-panel');
+    const explorePanel = document.getElementById('explore-panel');
+    const searchInput = document.getElementById('search-input');
+    const btnSearch = document.getElementById('btn-search');
+    const filesTbody = document.getElementById('files-tbody');
+
+    let grfFile = null;
+    let grfFilesList = []; // Lista completa de archivos parseados
+
+    // --- Drag and Drop ---
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].name.endsWith('.grf')) {
+        processGRF(files[0]);
+      } else {
+        alert('Por favor selecciona un archivo con extensión .grf');
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        processGRF(e.target.files[0]);
+      }
+    });
+
+    // --- Lectura de data.grf Oficial (Lado del Cliente) ---
+    function processGRF(file) {
+      grfFile = file;
+      dropZone.innerHTML = `<h3>Procesando <strong>${file.name}</strong> (${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB)...</h3><p>Leyendo cabecera binaria...</p>`;
+      
+      const reader = new FileReader();
+      
+      // Leer los primeros 46 bytes de la cabecera
+      const headerBlob = file.slice(0, 46);
+      reader.onload = function(e) {
+        const buffer = e.target.result;
+        const view = new DataView(buffer);
+
+        // 1. Validar Firma Mágica ("Master of Magic\0")
+        let magic = "";
+        for (let i = 0; i < 15; i++) {
+          const char = view.getUint8(i);
+          if (char !== 0) magic += String.fromCharCode(char);
+        }
+        
+        if (magic !== "Master of Magic") {
+          alert("Firma de archivo GRF inválida. Asegúrate de subir el archivo data.grf correcto.");
+          resetUI();
+          return;
+        }
+
+        // 2. Leer offsets
+        const fileTableOffset = view.getInt32(30, true);
+        const seed = view.getInt32(34, true);
+        const filesCount = view.getInt32(38, true) - seed - 7;
+        const version = view.getInt32(42, true);
+
+        // Actualizar UI
+        document.getElementById('meta-magic').textContent = magic;
+        document.getElementById('meta-version').textContent = `2.0 (0x${version.toString(16)})`;
+        document.getElementById('meta-count').textContent = filesCount.toLocaleString();
+
+        // 3. Leer Tabla de Archivos comprimida al final del archivo
+        readGRFFileTable(fileTableOffset, filesCount);
+      };
+      
+      reader.readAsArrayBuffer(headerBlob);
+    }
+
+    function readGRFFileTable(offset, count) {
+      dropZone.innerHTML = `<h3>Extrayendo tabla de contenidos...</h3><p>Descomprimiendo índice de archivos con Zlib/Pako...</p>`;
+
+      const reader = new FileReader();
+      
+      // La tabla de archivos tiene un encabezado de 8 bytes: [compressed_size (4B)] [uncompressed_size (4B)]
+      const tableHeadBlob = grfFile.slice(offset, offset + 8);
+      
+      reader.onload = function(e) {
+        const view = new DataView(e.target.result);
+        const compressedSize = view.getInt32(0, true);
+        const uncompressedSize = view.getInt32(4, true);
+
+        document.getElementById('meta-size').textContent = `${(uncompressedSize / 1024).toFixed(0)} KB`;
+
+        // Leer los bytes comprimidos de la tabla
+        const tableDataBlob = grfFile.slice(offset + 8, offset + 8 + compressedSize);
+        const dataReader = new FileReader();
+
+        dataReader.onload = function(evt) {
+          try {
+            // Descomprimir usando Pako (Zlib inflate)
+            const compressedBytes = new Uint8Array(evt.target.result);
+            const unpackedBytes = pako.inflate(compressedBytes);
+            
+            // Parsear la tabla unpacked
+            parseFileTable(unpackedBytes, count);
+          } catch (err) {
+            console.error(err);
+            alert("Error al descomprimir la tabla del GRF: " + err.message);
+            resetUI();
+          }
+        };
+        dataReader.readAsArrayBuffer(tableDataBlob);
+      };
+
+      reader.readAsArrayBuffer(tableHeadBlob);
+    }
+
+    // Parsear la estructura de la tabla de archivos unpacked
+    function parseFileTable(bytes, count) {
+      let offset = 0;
+      grfFilesList = [];
+      const view = new DataView(bytes.buffer);
+
+      try {
+        for (let i = 0; i < count; i++) {
+          if (offset >= bytes.length) break;
+
+          // 1. Leer ruta (String null-terminated)
+          let path = "";
+          while (bytes[offset] !== 0 && offset < bytes.length) {
+            path += String.fromCharCode(bytes[offset]);
+            offset++;
+          }
+          offset++; // saltar el null terminator
+
+          if (offset + 17 > bytes.length) break;
+
+          // 2. Leer metadatos del archivo
+          const cLen = view.getInt32(offset, true);
+          const uLen = view.getInt32(offset + 4, true);
+          const uLenAligned = view.getInt32(offset + 8, true);
+          const flag = view.getUint8(offset + 12);
+          const fileOffset = view.getInt32(offset + 13, true);
+          offset += 17;
+
+          // Guardar entrada
+          grfFilesList.push({
+            path: decodeKoreanString(path),
+            compressedSize: cLen,
+            uncompressedSize: uLen,
+            offset: fileOffset,
+            flag: flag
+          });
+        }
+
+        // Mostrar paneles
+        dropZone.classList.add('hidden');
+        metaPanel.classList.remove('hidden');
+        explorePanel.classList.remove('hidden');
+
+        // Renderizar primeros 100 archivos por defecto
+        renderFilesTable(grfFilesList.slice(0, 100));
+
+      } catch (err) {
+        alert("Error al parsear el índice de archivos: " + err.message);
+        resetUI();
+      }
+    }
+
+    // Decodificar caracteres Coreanos EUC-KR clásicos de RO a legibles
+    function decodeKoreanString(str) {
+      // Como cargamos de forma simple ASCII, intentamos traducir palabras clave más comunes de RO
+      let s = str;
+      s = s.replace(/¾ÆÀÌÅÛ/g, 'item');
+      s = s.replace(/À¯ÀúÀÎÅÍÆäÀÌ½º/g, 'interface');
+      s = s.replace(/¹è°æÀ½¾Ç/g, 'bgm');
+      s = s.replace(/¿¡ÆåÆ®/g, 'effect');
+      s = s.replace(/Æ÷¸µ/g, 'poring');
+      s = s.replace(/data\\sprite\\/g, 'sprite/');
+      return s;
+    }
+
+    function renderFilesTable(list) {
+      filesTbody.innerHTML = '';
+      
+      if (list.length === 0) {
+        filesTbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Ningún archivo coincide con la búsqueda.</td></tr>';
+        return;
+      }
+
+      list.forEach(file => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td style="word-break: break-all; font-family: monospace;">${file.path}</td>
+          <td>${(file.compressedSize / 1024).toFixed(1)} KB</td>
+          <td>${(file.uncompressedSize / 1024).toFixed(1)} KB</td>
+          <td><button class="btn-extract" onclick="extractGRFFile(${file.offset}, ${file.compressedSize}, ${file.uncompressedSize}, '${file.path}')">Ver</button></td>
+        `;
+        filesTbody.appendChild(row);
+      });
+    }
+
+    // --- Buscador ---
+    btnSearch.addEventListener('click', executeSearch);
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') executeSearch();
+    });
+
+    function executeSearch() {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) {
+        renderFilesTable(grfFilesList.slice(0, 100));
+        return;
+      }
+
+      const filtered = grfFilesList.filter(f => f.path.toLowerCase().includes(q));
+      renderFilesTable(filtered.slice(0, 150)); // Mostrar máximo 150 resultados
+    }
+
+    // --- Extraer y Visualizar archivo individual ---
+    window.extractGRFFile = function(offset, cSize, uSize, path) {
+      if (!grfFile) return;
+
+      // El archivo en el GRF está a partir de: header_offset (46B) + file_offset
+      // El encabezado tiene 46 bytes, así que los offsets son relativos al inicio o sumando 46
+      // Para GRF 2.0, el offset es absoluto.
+      const fileBlob = grfFile.slice(offset, offset + cSize);
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        try {
+          const compressedBytes = new Uint8Array(e.target.result);
+          // Descomprimir bytes del archivo usando Pako
+          const uncompressedBytes = pako.inflate(compressedBytes);
+          
+          // Crear un Blob y descargarlo
+          const blob = new Blob([uncompressedBytes], { type: "application/octet-stream" });
+          const url = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = url;
+          // Obtener nombre base de archivo
+          const parts = path.split('/');
+          a.download = parts[parts.length - 1];
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+        } catch (err) {
+          alert("Error al extraer y descomprimir este archivo: " + err.message + "\\n(Puede que requiera desencripción propietaria)");
+        }
+      };
+
+      reader.readAsArrayBuffer(fileBlob);
+    };
+
+    function resetUI() {
+      dropZone.classList.remove('hidden');
+      metaPanel.classList.add('hidden');
+      explorePanel.classList.add('hidden');
+      dropZone.innerHTML = `
+        <span style="font-size: 2.5rem; margin-bottom: 10px; display: block;">📂</span>
+        <h3>Arrastra tu archivo <strong>data.grf</strong> aquí</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 5px;">
+          Se encuentra en la carpeta extraída <code>C:\\Users\\nh250032\\Downloads\\RagnarokMéxicoV1</code>.
+        </p>
+        <button class="btn btn-secondary" style="margin-top: 15px;">Seleccionar Archivo Manualmente</button>
+      `;
+      grfFile = null;
+      grfFilesList = [];
+    }
+  </script>
+</body>
+</html>
