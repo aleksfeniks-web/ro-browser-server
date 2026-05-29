@@ -32,11 +32,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const elSrvPing = document.getElementById('srv-ping');
   const elSrvPlayers = document.getElementById('srv-players');
 
-  // --- Inicializar y verificar data.grf local en IndexedDB ---
-  if (window.localGRF) {
+  // --- Inicializar y verificar data.grf local o Cloud CDN ---
+  const btnGRF = document.getElementById('btn-grf-status');
+  if (window.WebROConfig && window.WebROConfig.cdnUrl) {
+    if (btnGRF) {
+      btnGRF.innerHTML = '⚡ Activos en la Nube';
+      btnGRF.style.background = '#8b5cf6'; // Violeta/Morado premium
+      btnGRF.style.borderColor = '#8b5cf6';
+      btnGRF.title = "Los recursos del juego se transmiten directamente desde el CDN en la nube.";
+    }
+  } else if (window.localGRF) {
     window.localGRF.init().then(() => {
       if (window.localGRF.isSaved) {
-        const btnGRF = document.getElementById('btn-grf-status');
         if (btnGRF) {
           btnGRF.innerHTML = '✅ data.grf Activo';
           btnGRF.style.background = '#10b981';

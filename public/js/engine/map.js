@@ -27,7 +27,22 @@ class GameMap {
     const grassPath = 'data/texture/ÀÌ¹ÌÁöÆÇ/grass01.bmp';
     const stonePath = 'data/texture/ÀÌ¹ÌÁöÆÇ/stone01.bmp';
 
-    // 1. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com)
+    // 1. Intentar cargar desde el CDN en la nube si está configurado
+    if (window.WebROConfig && window.WebROConfig.cdnUrl) {
+      try {
+        const grassUrl = `${window.WebROConfig.cdnUrl}${grassPath}`;
+        const stoneUrl = `${window.WebROConfig.cdnUrl}${stonePath}`;
+        
+        this.textures.grass.src = grassUrl;
+        this.textures.stone.src = stoneUrl;
+        console.log('✅ [Map] Texturas cargándose desde el CDN en la nube.');
+        return;
+      } catch (err) {
+        console.warn('[Map] Falló la carga de texturas desde el CDN, intentando local:', err);
+      }
+    }
+
+    // 2. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com)
     if (window.localGRF && window.localGRF.isLoaded) {
       try {
         const grassBytes = await window.localGRF.readBytes(grassPath);
@@ -42,7 +57,7 @@ class GameMap {
       }
     }
 
-    // 2. Intentar cargar desde la API del servidor (Localhost / Fallback)
+    // 3. Intentar cargar desde la API del servidor (Localhost / Fallback)
     this.textures.grass.src = `/api/grf/file?path=${encodeURIComponent(grassPath)}`;
     this.textures.stone.src = `/api/grf/file?path=${encodeURIComponent(stonePath)}`;
   }

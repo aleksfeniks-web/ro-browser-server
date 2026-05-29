@@ -5,7 +5,21 @@
  */
 class SprParser {
   static async loadAndParse(path) {
-    // 1. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com en la nube)
+    // 1. Intentar cargar desde el CDN en la nube si está configurado
+    if (window.WebROConfig && window.WebROConfig.cdnUrl) {
+      try {
+        const url = `${window.WebROConfig.cdnUrl}${path}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          return this.parse(arrayBuffer);
+        }
+      } catch (err) {
+        console.warn(`[SprParser] Falló la carga desde el CDN en la nube para ${path}, intentando local:`, err);
+      }
+    }
+
+    // 2. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com en la nube)
     if (window.localGRF && window.localGRF.isLoaded) {
       try {
         const bytes = await window.localGRF.readBytes(path);
@@ -17,7 +31,7 @@ class SprParser {
       }
     }
 
-    // 2. Intentar cargar desde la API del servidor (Localhost / Fallback)
+    // 3. Intentar cargar desde la API del servidor (Localhost / Fallback)
     const url = `/api/grf/file?path=${encodeURIComponent(path)}`;
     const response = await fetch(url);
     if (!response.ok) {

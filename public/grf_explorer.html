@@ -13,6 +13,7 @@
   <!-- JSZip (for batch zip downloads) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <!-- LocalGRF Database Reader -->
+  <script src="js/config.js"></script>
   <script src="js/engine/local_grf.js"></script>
   <!-- CSS -->
   <link rel="stylesheet" href="css/launcher.css">
@@ -189,6 +190,11 @@
       <p class="tagline">Explorador y Lector de data.grf del Cliente Original</p>
     </header>
 
+    <!-- Banner de CDN Activo -->
+    <div id="cdn-active-banner" class="hidden" style="background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px 15px; margin-bottom: 20px; text-align: center; color: #c084fc; font-size: 0.8rem; font-weight: 500; line-height: 1.4;">
+      ⚡ <strong>¡CDN en la Nube Activo!</strong> Los activos del juego ya están configurados para transmitirse automáticamente desde internet. No necesitas subir nada para jugar. No obstante, si decides subir tu <code>data.grf</code> aquí, se guardará en tu navegador para una carga local directa ultra veloz.
+    </div>
+
     <!-- Zona de Drop de Archivo -->
     <div id="drop-zone" class="drop-zone animate-fade-in delay-1">
       <span style="font-size: 2.5rem; margin-bottom: 10px; display: block;">📂</span>
@@ -249,6 +255,11 @@
 
   <!-- Lógica de Lectura Binaria Local -->
   <script>
+    // Mostrar banner si hay CDN configurado
+    if (window.WebROConfig && window.WebROConfig.cdnUrl) {
+      document.getElementById('cdn-active-banner').classList.remove('hidden');
+    }
+
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const metaPanel = document.getElementById('meta-panel');
