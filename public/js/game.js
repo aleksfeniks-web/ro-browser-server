@@ -411,9 +411,86 @@ class Game {
         const sw = frame.width * scale * 1.3;
         const sh = frame.height * scale * 1.3;
         
-        // Centrar y dibujar
+        // Centrar y dibujar el cuerpo GRF original animado
         ctx.drawImage(frame, pos.x - sw / 2, pos.y - sh + 5 * scale, sw, sh);
         
+        // --- DIBUJAR CABEZA Y CABELLO ESTILIZADOS SOBRE EL CUERPO ---
+        const headY = pos.y - sh + 14 * scale;
+        const charColor = this.getHairColorHex(char.hairColor);
+
+        // Cara
+        ctx.fillStyle = '#fbc4b2';
+        ctx.beginPath();
+        ctx.arc(pos.x, headY, 5 * scale, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ojos
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(pos.x - 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
+        ctx.arc(pos.x + 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cabello según Estilo
+        ctx.fillStyle = charColor;
+        if (char.hair === 1) { // Cabello Largo
+          ctx.beginPath();
+          ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
+          ctx.quadraticCurveTo(pos.x, headY - 8 * scale, pos.x + 6 * scale, headY + 1 * scale);
+          ctx.quadraticCurveTo(pos.x + 7 * scale, headY + 6 * scale, pos.x + 4 * scale, headY + 6 * scale);
+          ctx.lineTo(pos.x - 4 * scale, headY + 6 * scale);
+          ctx.closePath();
+          ctx.fill();
+        } else if (char.hair === 2) { // Espinado (Punk)
+          ctx.beginPath();
+          ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
+          ctx.lineTo(pos.x - 8 * scale, headY - 4 * scale);
+          ctx.lineTo(pos.x - 3 * scale, headY - 3 * scale);
+          ctx.lineTo(pos.x, headY - 8 * scale);
+          ctx.lineTo(pos.x + 3 * scale, headY - 3 * scale);
+          ctx.lineTo(pos.x + 8 * scale, headY - 4 * scale);
+          ctx.lineTo(pos.x + 6 * scale, headY + 1 * scale);
+          ctx.closePath();
+          ctx.fill();
+        } else { // Cabello Corto
+          ctx.beginPath();
+          ctx.arc(pos.x, headY - 2 * scale, 5.5 * scale, Math.PI, 0, false);
+          ctx.fill();
+        }
+
+        // Sombrero si tiene (Poring Hat)
+        if (char.equipment && char.equipment.headgear === 2201) {
+          ctx.fillStyle = '#fda4af'; // Rosa poring
+          ctx.beginPath();
+          ctx.arc(pos.x, headY - 6 * scale, 4.5 * scale, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#f43f5e';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          // Ojitos del sombrero poring
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(pos.x - 1.8 * scale, headY - 6 * scale, 0.7 * scale, 0, Math.PI * 2);
+          ctx.arc(pos.x + 1.8 * scale, headY - 6 * scale, 0.7 * scale, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (char.equipment && char.equipment.headgear === 2202) { // Cinta
+          ctx.fillStyle = '#ef4444'; // Cinta Roja
+          ctx.beginPath();
+          ctx.ellipse(pos.x, headY - 5 * scale, 3.5 * scale, 1.5 * scale, 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Arma (Espada/Cuchillo en mano)
+        if (char.equipment && char.equipment.weapon) {
+          ctx.strokeStyle = '#cbd5e1'; // Metal
+          ctx.lineWidth = 2 * scale;
+          ctx.beginPath();
+          ctx.moveTo(pos.x + 6 * scale, pos.y - 12 * scale);
+          ctx.lineTo(pos.x + 16 * scale, pos.y - 18 * scale);
+          ctx.stroke();
+        }
+
         // Barra de Vida
         if (char.hp < char.maxHp && char.hp > 0) {
           const barW = 32 * this.camera.zoom;
@@ -874,6 +951,29 @@ class Game {
         this.ctx.font = `bold ${Math.round(20 * this.camera.zoom)}px var(--font-body)`;
         this.ctx.textAlign = 'center';
         this.ctx.fillText("+", pos.x, pos.y - 20 * this.camera.zoom - 30 * this.camera.zoom * progress);
+      } else if (eff.type === 'hit_spark') {
+        // Destello de golpe / chispazo clásico de RO
+        const progress = 1.0 - eff.life / 0.25;
+        this.ctx.strokeStyle = eff.color;
+        this.ctx.lineWidth = 3 * (1.0 - progress) * this.camera.zoom;
+        
+        // Dibujar cruz de destello / chispas
+        const length = 15 * progress * this.camera.zoom;
+        
+        this.ctx.beginPath();
+        // Línea diagonal 1
+        this.ctx.moveTo(pos.x - length, pos.y - 12 * this.camera.zoom - length);
+        this.ctx.lineTo(pos.x + length, pos.y - 12 * this.camera.zoom + length);
+        // Línea diagonal 2
+        this.ctx.moveTo(pos.x - length, pos.y - 12 * this.camera.zoom + length);
+        this.ctx.lineTo(pos.x + length, pos.y - 12 * this.camera.zoom - length);
+        this.ctx.stroke();
+
+        // Destello circular central brillante
+        this.ctx.fillStyle = '#fff';
+        this.ctx.beginPath();
+        this.ctx.arc(pos.x, pos.y - 12 * this.camera.zoom, 4 * (1.0 - progress) * this.camera.zoom, 0, Math.PI * 2);
+        this.ctx.fill();
       }
 
       this.ctx.restore();

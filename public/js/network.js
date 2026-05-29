@@ -180,10 +180,18 @@ class Network {
         }
 
         if (targetEnt) {
-          if (damage > 0) {
+          if (damage > 0 && !heal) {
             targetEnt.hp = Math.max(0, targetEnt.hp - damage);
-          }
-          if (heal) {
+            
+            // Spawnear efecto visual de chispa/corte de golpe clásico
+            this.game.particleEffects.push({
+              x: targetEnt.x,
+              y: targetEnt.y,
+              color: isCrit ? '#facc15' : '#ef4444',
+              life: 0.25,
+              type: 'hit_spark'
+            });
+          } else if (heal) {
             targetEnt.hp = Math.min(targetEnt.maxHp, targetEnt.hp + damage);
           }
 
