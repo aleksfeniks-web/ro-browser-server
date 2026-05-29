@@ -265,19 +265,19 @@
           return;
         }
 
-        // 2. Leer offsets (desplazamiento corregido por 1 byte)
-        const fileTableOffset = view.getInt32(31, true);
-        const seed = view.getInt32(35, true);
-        const filesCount = view.getInt32(39, true) - seed - 7;
-        const version = view.getInt32(43, true);
+        // 2. Leer offsets (estándar GRF 2.0: cabecera de 46 bytes)
+        const fileTableOffset = view.getInt32(30, true);
+        const seed = view.getInt32(34, true);
+        const filesCount = view.getInt32(38, true) - seed - 7;
+        const version = view.getInt32(42, true);
 
         // Actualizar UI
         document.getElementById('meta-magic').textContent = magic;
         document.getElementById('meta-version').textContent = `2.0 (0x${version.toString(16)})`;
         document.getElementById('meta-count').textContent = filesCount.toLocaleString();
 
-        // 3. Leer Tabla de Archivos comprimida al final del archivo
-        readGRFFileTable(fileTableOffset, filesCount);
+        // 3. Leer Tabla de Archivos comprimida al final del archivo (relativa a los 46 bytes de cabecera)
+        readGRFFileTable(fileTableOffset + 46, filesCount);
       };
       
       reader.readAsArrayBuffer(headerBlob);
@@ -430,8 +430,7 @@
 
       // El archivo en el GRF está a partir de: header_offset (46B) + file_offset
       // El encabezado tiene 46 bytes, así que los offsets son relativos al inicio o sumando 46
-      // Para GRF 2.0, el offset es absoluto.
-      const fileBlob = grfFile.slice(offset, offset + cSize);
+      const fileBlob = grfFile.slice(offset + 46, offset + 46 + cSize);
       const reader = new FileReader();
 
       reader.onload = function(e) {
