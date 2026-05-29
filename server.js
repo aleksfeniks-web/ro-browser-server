@@ -97,8 +97,8 @@ async function initDatabase() {
           stat_points INTEGER DEFAULT 0,
           skill_points INTEGER DEFAULT 0,
           map_name VARCHAR(50) DEFAULT 'prontera',
-          x INTEGER DEFAULT 15,
-          y INTEGER DEFAULT 15,
+          x INTEGER DEFAULT 50,
+          y INTEGER DEFAULT 56,
           inventory JSONB DEFAULT '[]'::jsonb,
           equipment JSONB DEFAULT '{"weapon": null, "headgear": null}'::jsonb,
           skills JSONB DEFAULT '{"double_strafe": 0, "bash": 0, "fire_bolt": 0, "heal": 0}'::jsonb
@@ -262,6 +262,35 @@ function initGRF() {
 
 initGRF();
 
+// Función para buscar archivos de forma insensible a mayúsculas/minúsculas en Linux
+function findFileCaseInsensitive(baseDir, relativePath) {
+  try {
+    const parts = relativePath.replace(/\\/g, '/').split('/');
+    let currentPath = baseDir;
+
+    for (const part of parts) {
+      if (!part) continue;
+      if (!fs.existsSync(currentPath)) return null;
+
+      const stats = fs.statSync(currentPath);
+      if (!stats.isDirectory()) return null;
+
+      const files = fs.readdirSync(currentPath);
+      const matched = files.find(f => f.toLowerCase().normalize('NFC') === part.toLowerCase().normalize('NFC'));
+
+      if (!matched) return null;
+      currentPath = path.join(currentPath, matched);
+    }
+    
+    if (fs.existsSync(currentPath) && fs.statSync(currentPath).isFile()) {
+      return currentPath;
+    }
+  } catch (err) {
+    console.error('Error en findFileCaseInsensitive:', err);
+  }
+  return null;
+}
+
 // API Endpoint para extraer archivos del GRF en tiempo real
 app.get('/api/grf/file', (req, res) => {
   const filePath = req.query.path;
@@ -270,16 +299,11 @@ app.get('/api/grf/file', (req, res) => {
   }
 
   const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
-  const originalCleanPath = filePath.replace(/\\/g, '/');
 
-  // 1. Si existe un archivo pre-extraído en la carpeta public/, servirlo directamente (ideal para Render.com en la nube)
-  // Soporta tanto rutas en minúsculas como con mayúsculas originales en sistemas Linux sensibles a mayúsculas
-  let localPreExtractedPath = path.join(__dirname, 'public', originalCleanPath);
-  if (!fs.existsSync(localPreExtractedPath)) {
-    localPreExtractedPath = path.join(__dirname, 'public', cleanPath);
-  }
+  // 1. Si existe un archivo pre-extraído en la carpeta public/, servirlo directamente
+  const localPreExtractedPath = findFileCaseInsensitive(path.join(__dirname, 'public'), filePath);
 
-  if (fs.existsSync(localPreExtractedPath)) {
+  if (localPreExtractedPath) {
     let contentType = 'application/octet-stream';
     if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
     else if (cleanPath.endsWith('.png')) contentType = 'image/png';
@@ -985,8 +1009,8 @@ wss.on('connection', ws => {
             statPoints: 0,
             skillPoints: 0,
             map: 'prontera',
-            x: 15,
-            y: 15,
+            x: 50,
+            y: 56,
             inventory: [
               { itemId: 501, count: 5, equipped: false },
               { itemId: 1201, count: 1, equipped: false }

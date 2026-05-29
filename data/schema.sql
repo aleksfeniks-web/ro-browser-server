@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS characters (
     stat_points INTEGER DEFAULT 0,
     skill_points INTEGER DEFAULT 0,
     map_name VARCHAR(50) DEFAULT 'prontera',
-    x INTEGER DEFAULT 15,
-    y INTEGER DEFAULT 15,
+    x INTEGER DEFAULT 50,
+    y INTEGER DEFAULT 56,
     inventory JSONB DEFAULT '[]'::jsonb,
     equipment JSONB DEFAULT '{"weapon": null, "headgear": null}'::jsonb,
     skills JSONB DEFAULT '{"double_strafe": 0, "bash": 0, "fire_bolt": 0, "heal": 0}'::jsonb
