@@ -961,6 +961,10 @@ window.onload = async () => {
       try {
         console.log('🔄 [LocalGRF] Inicializando base de datos local GRF antes del motor...');
         await window.localGRF.init();
+        if (window.localGRF.parsePromise) {
+          console.log('⏳ [LocalGRF] Esperando a que el indexador en segundo plano termine...');
+          await window.localGRF.parsePromise;
+        }
       } catch (err) {
         console.error('❌ [LocalGRF] Fallo al inicializar LocalGRF:', err);
       }

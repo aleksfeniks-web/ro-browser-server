@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Inicializar y verificar data.grf local en IndexedDB ---
   if (window.localGRF) {
     window.localGRF.init().then(() => {
-      if (window.localGRF.isLoaded) {
+      if (window.localGRF.isSaved) {
         const btnGRF = document.getElementById('btn-grf-status');
         if (btnGRF) {
           btnGRF.innerHTML = '✅ data.grf Activo';

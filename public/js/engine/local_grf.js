@@ -11,6 +11,8 @@ class LocalGRF {
     this.file = null;
     this.index = new Map();
     this.isLoaded = false;
+    this.isSaved = false;
+    this.parsePromise = null;
   }
 
   async init() {
@@ -18,11 +20,14 @@ class LocalGRF {
     const loadedFile = await this.loadGRFFile();
     if (loadedFile) {
       console.log(`📦 [LocalGRF] Detectado data.grf local guardado en IndexedDB.`);
-      try {
-        await this.parseGRF();
-      } catch (err) {
+      this.isSaved = true;
+      
+      // Iniciar el pesado parseo en segundo plano sin bloquear el hilo principal del Launcher
+      this.parsePromise = this.parseGRF().then(() => {
+        this.isLoaded = true;
+      }).catch(err => {
         console.error('❌ [LocalGRF] Error al parsear data.grf local:', err);
-      }
+      });
     }
   }
 
@@ -141,16 +146,17 @@ class LocalGRF {
 
                   let offset = 0;
                   this.index.clear();
+                  const decoder = new TextDecoder('windows-1252');
 
                   for (let i = 0; i < filesCount; i++) {
                     if (offset >= unpacked.length) break;
 
-                    let filePath = '';
-                    while (unpacked[offset] !== 0 && offset < unpacked.length) {
-                      filePath += String.fromCharCode(unpacked[offset]);
-                      offset++;
-                    }
-                    offset++; // saltar null
+                    // Decodificación ultra-rápida nativa usando subarray e indexOf
+                    const nextNull = unpacked.indexOf(0, offset);
+                    if (nextNull === -1 || nextNull >= unpacked.length) break;
+
+                    const filePath = decoder.decode(unpacked.subarray(offset, nextNull));
+                    offset = nextNull + 1; // saltar null
 
                     if (offset + 17 > unpacked.length) break;
 
