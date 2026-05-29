@@ -451,7 +451,6 @@ class Game {
     }
 
     // 2. Dibujar Cuerpo del Personaje
-    const scale = this.camera.zoom * 0.9;
     const charColor = this.getHairColorHex(char.hairColor);
 
     // Traje según Clase
