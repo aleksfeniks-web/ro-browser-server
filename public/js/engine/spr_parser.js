@@ -9,7 +9,9 @@ class SprParser {
     if (window.localGRF && window.localGRF.isLoaded) {
       try {
         const bytes = await window.localGRF.readBytes(path);
-        return this.parse(bytes.buffer);
+        // Cortar el ArrayBuffer usando el byteOffset y byteLength correctos (evita leer basura si el buffer está compartido)
+        const cleanBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        return this.parse(cleanBuffer);
       } catch (err) {
         console.warn(`[SprParser] No se pudo leer localmente ${path}, intentando desde la API:`, err);
       }

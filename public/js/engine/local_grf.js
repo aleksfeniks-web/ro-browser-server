@@ -142,7 +142,8 @@ class LocalGRF {
                 try {
                   const compressedBytes = new Uint8Array(ev.target.result);
                   const unpacked = pako.inflate(compressedBytes);
-                  const viewUnpacked = new DataView(unpacked.buffer);
+                  // Usar byteOffset y byteLength de forma segura por si pako usa un pool de buffers
+                  const viewUnpacked = new DataView(unpacked.buffer, unpacked.byteOffset, unpacked.byteLength);
 
                   let offset = 0;
                   this.index.clear();
@@ -206,7 +207,9 @@ class LocalGRF {
         try {
           const compressed = new Uint8Array(e.target.result);
           const decompressed = pako.inflate(compressed);
-          resolve(decompressed);
+          // Retornar un Uint8Array limpio con offset 0 para evitar bugs al pasar bytes.buffer
+          const cleanBytes = new Uint8Array(decompressed.buffer.slice(decompressed.byteOffset, decompressed.byteOffset + decompressed.byteLength));
+          resolve(cleanBytes);
         } catch (err) { reject(err); }
       };
       reader.onerror = (err) => reject(err);
