@@ -269,11 +269,27 @@ app.get('/api/grf/file', (req, res) => {
     return res.status(400).send('Falta el parámetro "path".');
   }
 
-  if (!grfFd || grfIndex.size === 0) {
-    return res.status(503).send('Servicio de GRF no disponible.');
+  const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
+
+  // 1. Si existe un archivo pre-extraído en la carpeta public/, servirlo directamente (ideal para Render.com en la nube)
+  const localPreExtractedPath = path.join(__dirname, 'public', cleanPath);
+  if (fs.existsSync(localPreExtractedPath)) {
+    let contentType = 'application/octet-stream';
+    if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
+    else if (cleanPath.endsWith('.png')) contentType = 'image/png';
+    else if (cleanPath.endsWith('.tga')) contentType = 'image/tga';
+    else if (cleanPath.endsWith('.wav')) contentType = 'audio/wav';
+    else if (cleanPath.endsWith('.mp3')) contentType = 'audio/mpeg';
+
+    res.setHeader('Content-Type', contentType);
+    return res.sendFile(localPreExtractedPath);
   }
 
-  const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
+  // 2. Si no, intentar leer desde el GRF físico local (sólo en localhost)
+  if (!grfFd || grfIndex.size === 0) {
+    return res.status(503).send('Servicio de GRF no disponible en la nube.');
+  }
+
   const entry = grfIndex.get(cleanPath);
 
   if (!entry) {
