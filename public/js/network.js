@@ -55,6 +55,14 @@ class Network {
 
   handlePacket(packet) {
     switch (packet.type) {
+      case 'enter_game_response': {
+        if (!packet.success) {
+          alert('Error al entrar al juego: No se pudo cargar el personaje. Asegúrate de haber ejecutado el archivo schema.sql en Neon.tech y que la base de datos esté lista.');
+          window.location.href = 'index.html';
+        }
+        break;
+      }
+
       case 'game_init': {
         // Inicializar datos del jugador local
         this.game.localPlayer = packet.char;
