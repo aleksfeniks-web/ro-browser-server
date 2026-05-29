@@ -10,6 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
   <!-- Pako (Zlib descompressor for GRF file table extraction) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <!-- JSZip (for batch zip downloads) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <!-- CSS -->
   <link rel="stylesheet" href="css/launcher.css">
   <style>
@@ -128,6 +130,46 @@
       padding: 8px 16px;
       font-size: 0.8rem;
     }
+    .progress-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+    .progress-box {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(83, 142, 245, 0.3);
+      border-radius: 16px;
+      padding: 40px;
+      width: 90%;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary), #3b82f6);
+      transition: width 0.1s ease;
+    }
   </style>
 </head>
 <body>
@@ -182,6 +224,7 @@
       <div class="search-row">
         <input type="text" id="search-input" class="search-input" placeholder="Buscar archivos (ej: poring.spr, prontera.rsw, mp3)...">
         <button id="btn-search" class="btn btn-primary" style="padding: 0 20px; font-size: 0.85rem;">Buscar</button>
+        <button id="btn-download-zip" class="btn btn-secondary hidden" style="padding: 0 15px; font-size: 0.85rem; background: #10b981; border-color: #10b981; margin-left: 5px;">Descargar Filtrados (.zip)</button>
       </div>
 
       <div class="files-table-container">
@@ -365,6 +408,11 @@
         metaPanel.classList.remove('hidden');
         explorePanel.classList.remove('hidden');
 
+        const zipBtn = document.getElementById('btn-download-zip');
+        zipBtn.classList.remove('hidden');
+        currentlyFilteredList = grfFilesList;
+        zipBtn.textContent = `Descargar Todo (.zip) (${grfFilesList.length.toLocaleString()})`;
+
         // Renderizar primeros 100 archivos por defecto
         renderFilesTable(grfFilesList.slice(0, 100));
 
@@ -407,6 +455,9 @@
       });
     }
 
+    let currentlyFilteredList = []; // Lista de archivos que coinciden con el filtro de búsqueda actual
+    let cancelZipFlag = false;
+
     // --- Buscador ---
     btnSearch.addEventListener('click', executeSearch);
     searchInput.addEventListener('keydown', (e) => {
@@ -415,14 +466,135 @@
 
     function executeSearch() {
       const q = searchInput.value.trim().toLowerCase();
+      const zipBtn = document.getElementById('btn-download-zip');
+      
       if (!q) {
+        currentlyFilteredList = grfFilesList;
+        zipBtn.textContent = `Descargar Todo (.zip) (${grfFilesList.length.toLocaleString()})`;
         renderFilesTable(grfFilesList.slice(0, 100));
         return;
       }
 
-      const filtered = grfFilesList.filter(f => f.path.toLowerCase().includes(q));
-      renderFilesTable(filtered.slice(0, 150)); // Mostrar máximo 150 resultados
+      currentlyFilteredList = grfFilesList.filter(f => f.path.toLowerCase().includes(q));
+      zipBtn.textContent = `Descargar Filtrados (.zip) (${currentlyFilteredList.length.toLocaleString()})`;
+      renderFilesTable(currentlyFilteredList.slice(0, 150)); // Mostrar máximo 150 resultados
     }
+
+    // --- Helpers de Progreso y Descarga por Lotes (Batch ZIP) ---
+    function showProgress(visible, title = "Procesando", text = "") {
+      const overlay = document.getElementById('progress-overlay');
+      if (visible) {
+        cancelZipFlag = false;
+        document.getElementById('progress-title').textContent = title;
+        document.getElementById('progress-text').textContent = text;
+        document.getElementById('progress-fill').style.width = '0%';
+        overlay.classList.remove('hidden');
+      } else {
+        overlay.classList.add('hidden');
+      }
+    }
+
+    function updateProgress(percent, text) {
+      document.getElementById('progress-fill').style.width = `${percent}%`;
+      if (text) {
+        document.getElementById('progress-text').textContent = text;
+      }
+    }
+
+    function readGRFFileBytes(offset, size) {
+      return new Promise((resolve, reject) => {
+        const fileBlob = grfFile.slice(offset + 46, offset + 46 + size);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve(new Uint8Array(e.target.result));
+        };
+        reader.onerror = (err) => reject(err);
+        reader.readAsArrayBuffer(fileBlob);
+      });
+    }
+
+    document.getElementById('btn-download-zip').addEventListener('click', async () => {
+      if (currentlyFilteredList.length === 0) {
+        alert("No hay ningún archivo filtrado para descargar.");
+        return;
+      }
+
+      const total = currentlyFilteredList.length;
+      if (total > 2000) {
+        const confirmMsg = `Estás a punto de comprimir ${total.toLocaleString()} archivos en un ZIP en tu explorador.\n\n` +
+          `⚠️ ADVERTENCIA: Procesar una cantidad masiva de archivos (> 2,000) consumirá bastante memoria RAM y puede demorar varios minutos o congelar temporalmente el navegador.\n\n` +
+          `¿Deseas continuar? (Recomendación: filtra por subcarpetas específicas como data\\palette o tipos de archivo como .pal en el buscador)`;
+        if (!confirm(confirmMsg)) return;
+      } else {
+        if (!confirm(`¿Deseas comprimir y descargar los ${total.toLocaleString()} archivos en un archivo .ZIP?`)) return;
+      }
+
+      // Iniciar el empaquetado ZIP
+      const zip = new JSZip();
+      showProgress(true, `Generando ZIP`, `Preparando compresión de ${total} archivos...`);
+
+      let processed = 0;
+      let successes = 0;
+
+      // Habilitar cancelación
+      document.getElementById('btn-cancel-zip').onclick = () => {
+        cancelZipFlag = true;
+        updateProgress(processed / total * 100, `Cancelando descarga...`);
+      };
+
+      for (let i = 0; i < total; i++) {
+        if (cancelZipFlag) {
+          alert("Descarga por lote cancelada.");
+          showProgress(false);
+          return;
+        }
+
+        const file = currentlyFilteredList[i];
+        try {
+          const data = await readGRFFileBytes(file.offset, file.compressedSize);
+          const unpacked = pako.inflate(data);
+          
+          // Escribir en JSZip (JSZip requiere barras inclinadas normales para rutas)
+          const zipPath = file.path.replace(/\\/g, '/');
+          zip.file(zipPath, unpacked);
+          successes++;
+        } catch (err) {
+          console.error(`Error procesando ${file.path}:`, err);
+        }
+
+        processed++;
+        if (processed % 20 === 0 || processed === total) {
+          const percent = (processed / total) * 100;
+          updateProgress(percent, `Extrayendo y comprimiendo: ${processed} de ${total} (${percent.toFixed(0)}%)`);
+        }
+      }
+
+      if (cancelZipFlag) {
+        showProgress(false);
+        return;
+      }
+
+      updateProgress(100, `Generando compresión ZIP en el navegador...`);
+      
+      try {
+        const contentBlob = await zip.generateAsync({ type: "blob" }, function updateCallback(metadata) {
+          updateProgress(100, `Construyendo archivo ZIP: ${metadata.percent.toFixed(0)}%`);
+        });
+
+        const url = URL.createObjectURL(contentBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = total === grfFilesList.length ? `${grfFile.name.replace('.grf', '')}_completo.zip` : `webro_extraidos_${currentlyFilteredList.length}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (zipErr) {
+        alert("Error al generar el ZIP: " + zipErr.message);
+      }
+
+      showProgress(false);
+    });
 
     // --- Extraer y Visualizar archivo individual ---
     window.extractGRFFile = function(offset, cSize, uSize, path) {
@@ -475,7 +647,20 @@
       `;
       grfFile = null;
       grfFilesList = [];
+      document.getElementById('btn-download-zip').classList.add('hidden');
     }
   </script>
+
+  <!-- Modal de Progreso para Descarga Batch -->
+  <div id="progress-overlay" class="progress-overlay hidden">
+    <div class="progress-box">
+      <h3 id="progress-title" style="margin-bottom: 10px; font-family: 'Outfit', sans-serif;">Comprimiendo Archivos</h3>
+      <p id="progress-text" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Preparando archivos para la descarga...</p>
+      <div class="progress-bar-container">
+        <div id="progress-fill" class="progress-bar-fill"></div>
+      </div>
+      <button id="btn-cancel-zip" class="btn btn-secondary" style="margin-top: 15px; font-size: 0.8rem; padding: 6px 16px;">Cancelar Procesamiento</button>
+    </div>
+  </div>
 </body>
 </html>
