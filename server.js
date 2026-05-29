@@ -3,6 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3000;
@@ -178,6 +179,128 @@ loadMaps();
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
+// --- Lector Dinámico de data.grf para Gráficos Originales ---
+const GRF_PATH = `C:\\Users\\nh250032\\Downloads\\RagnarokMéxicoV1\\RagnarokMéxicoV1\\data.grf`;
+let grfIndex = new Map();
+let grfFd = null;
+
+function initGRF() {
+  if (!fs.existsSync(GRF_PATH)) {
+    console.log('⚠️ [GRF] No se detectó data.grf en la ruta oficial. No se cargarán gráficos originales.');
+    return;
+  }
+
+  console.log('📦 [GRF] Detectado data.grf. Cargando índice de archivos en memoria...');
+  try {
+    grfFd = fs.openSync(GRF_PATH, 'r');
+    const headerBuffer = Buffer.alloc(46);
+    fs.readSync(grfFd, headerBuffer, 0, 46, 0);
+
+    const magic = headerBuffer.toString('ascii', 0, 15);
+    if (!magic.startsWith('Master of Magic')) {
+      console.error('❌ [GRF] Firma de data.grf inválida.');
+      return;
+    }
+
+    const fileTableOffset = headerBuffer.readUInt32LE(30);
+    const seed = headerBuffer.readUInt32LE(34);
+    const rawFilesCount = headerBuffer.readUInt32LE(38);
+    const filesCount = rawFilesCount - seed - 7;
+
+    console.log(`📦 [GRF] Leyendo tabla a offset: ${fileTableOffset + 46}, archivos: ${filesCount}`);
+
+    // Leer cabecera de tabla de archivos
+    const tableHeader = Buffer.alloc(8);
+    fs.readSync(grfFd, tableHeader, 0, 8, fileTableOffset + 46);
+    const compressedSize = tableHeader.readUInt32LE(0);
+    const uncompressedSize = tableHeader.readUInt32LE(4);
+
+    // Leer tabla comprimida
+    const compressedData = Buffer.alloc(compressedSize);
+    fs.readSync(grfFd, compressedData, 0, compressedSize, fileTableOffset + 46 + 8);
+
+    const decompressed = zlib.inflateSync(compressedData);
+    
+    // Parsear tabla de archivos
+    let offset = 0;
+    for (let i = 0; i < filesCount; i++) {
+      if (offset >= decompressed.length) break;
+
+      // Leer ruta
+      let filePath = '';
+      while (decompressed[offset] !== 0 && offset < decompressed.length) {
+        filePath += String.fromCharCode(decompressed[offset]);
+        offset++;
+      }
+      offset++; // saltar null
+
+      if (offset + 17 > decompressed.length) break;
+
+      const cLen = decompressed.readUInt32LE(offset);
+      const uLen = decompressed.readUInt32LE(offset + 4);
+      const uLenAligned = decompressed.readUInt32LE(offset + 8);
+      const flag = decompressed[offset + 12];
+      const fileOffset = decompressed.readUInt32LE(offset + 13);
+      offset += 17;
+
+      // Guardar en índice (usar minúsculas y barras normales)
+      const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
+      grfIndex.set(cleanPath, {
+        offset: fileOffset,
+        compressedSize: cLen,
+        uncompressedSize: uLen,
+        flag: flag
+      });
+    }
+
+    console.log(`✅ [GRF] Índice cargado correctamente. ${grfIndex.size} archivos indexados.`);
+  } catch (err) {
+    console.error('❌ [GRF] Error al cargar data.grf:', err);
+  }
+}
+
+initGRF();
+
+// API Endpoint para extraer archivos del GRF en tiempo real
+app.get('/api/grf/file', (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath) {
+    return res.status(400).send('Falta el parámetro "path".');
+  }
+
+  if (!grfFd || grfIndex.size === 0) {
+    return res.status(503).send('Servicio de GRF no disponible.');
+  }
+
+  const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
+  const entry = grfIndex.get(cleanPath);
+
+  if (!entry) {
+    return res.status(404).send(`Archivo no encontrado en GRF: ${filePath}`);
+  }
+
+  try {
+    const compressedData = Buffer.alloc(entry.compressedSize);
+    fs.readSync(grfFd, compressedData, 0, entry.compressedSize, entry.offset + 46);
+
+    const decompressed = zlib.inflateSync(compressedData);
+    
+    // Determinar content-type aproximado
+    let contentType = 'application/octet-stream';
+    if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
+    else if (cleanPath.endsWith('.png')) contentType = 'image/png';
+    else if (cleanPath.endsWith('.tga')) contentType = 'image/tga';
+    else if (cleanPath.endsWith('.wav')) contentType = 'audio/wav';
+    else if (cleanPath.endsWith('.mp3')) contentType = 'audio/mpeg';
+
+    res.setHeader('Content-Type', contentType);
+    res.send(decompressed);
+  } catch (err) {
+    console.error(`Error al extraer ${filePath} del GRF:`, err);
+    res.status(500).send(`Error al extraer archivo: ${err.message}`);
+  }
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 

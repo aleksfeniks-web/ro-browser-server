@@ -28,6 +28,15 @@ class Game {
     this.lastMouseX = 0;
     this.lastMouseY = 0;
 
+    // Sprites cargados del GRF original
+    this.grfSprites = {
+      poring: null,
+      lunatic: null,
+      baphomet: null,
+      novice_male: null,
+      novice_female: null
+    };
+
     // Configurar Canvas
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
@@ -41,6 +50,9 @@ class Game {
     // Crear Instancia global de UI
     window.UI = new UIController(this);
 
+    // Cargar sprites originales del GRF
+    this.loadOriginalSprites();
+
     // Arrancar Bucle del Juego
     requestAnimationFrame((t) => this.loop(t));
   }
@@ -49,6 +61,21 @@ class Game {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
     this.camera.resize(this.canvas.width, this.canvas.height);
+  }
+
+  async loadOriginalSprites() {
+    console.log('🔄 [Sprites] Cargando sprites originales desde data.grf...');
+    try {
+      this.grfSprites.poring = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/poring.spr');
+      this.grfSprites.lunatic = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/lunatic.spr');
+      this.grfSprites.baphomet = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/baphomet_i.spr');
+      this.grfSprites.novice_male = await SprParser.loadAndParse('data/sprite/ÀÎ°£Á·/¸öÅë/³²/ÃÊº¸ÀÚ_³².spr');
+      this.grfSprites.novice_female = await SprParser.loadAndParse('data/sprite/ÀÎ°£Á·/¸öÅë/¿©/ÃÊº¸ÀÚ_¿©.spr');
+      
+      console.log('✅ [Sprites] Sprites originales cargados con éxito.');
+    } catch (err) {
+      console.warn('⚠️ [Sprites] No se pudieron cargar los sprites originales del GRF, usando fallbacks vectoriales:', err);
+    }
   }
 
   // --- Controles de Mouse & Movimiento ---
@@ -360,6 +387,63 @@ class Game {
     ctx.ellipse(pos.x, pos.y + 2, w / 3, h / 3, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    const scale = this.camera.zoom * 0.9;
+    
+    // Determinar si tenemos un sprite del GRF cargado
+    const isMale = char.gender !== 'F';
+    const spriteObj = isMale ? this.grfSprites.novice_male : this.grfSprites.novice_female;
+
+    if (spriteObj && spriteObj.frames && spriteObj.frames.length > 0) {
+      // --- RENDERIZAR CUERPO NOVICE ORIGINAL DE GRF ---
+      let frameIdx = 0;
+      const totalFrames = spriteObj.frames.length;
+      
+      if (char.state === 'moving') {
+        const cycle = Math.floor(Date.now() / 100) % 8; // 8 celdas de caminata
+        frameIdx = cycle % totalFrames;
+      } else {
+        // Idle
+        frameIdx = 0;
+      }
+
+      const frame = spriteObj.frames[frameIdx] || spriteObj.frames[0];
+      if (frame) {
+        const sw = frame.width * scale * 1.3;
+        const sh = frame.height * scale * 1.3;
+        
+        // Centrar y dibujar
+        ctx.drawImage(frame, pos.x - sw / 2, pos.y - sh + 5 * scale, sw, sh);
+        
+        // Barra de Vida
+        if (char.hp < char.maxHp && char.hp > 0) {
+          const barW = 32 * this.camera.zoom;
+          const barH = 3 * this.camera.zoom;
+          const pct = char.hp / char.maxHp;
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW, barH);
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW * pct, barH);
+        }
+
+        // Nombre
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = `bold ${Math.round(10 * this.camera.zoom)}px var(--font-body)`;
+        ctx.textAlign = 'center';
+        ctx.fillText(char.name, pos.x, pos.y - sh - 6);
+
+        if (char.chatBubble) {
+          this.drawChatBubble(ctx, pos.x, pos.y - sh - 15, char.chatBubble);
+        }
+
+        ctx.restore();
+        return;
+      }
+    }
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(pos.x, pos.y + 2, w / 3, h / 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     // Pequeño balanceo por animación de movimiento
     let bob = 0;
     if (char.state === 'moving') {
@@ -497,6 +581,58 @@ class Game {
     ctx.fill();
 
     const scale = this.camera.zoom * (mob.scale || 1.0);
+    
+    // Determinar si tenemos un sprite del GRF cargado
+    let spriteObj = null;
+    if (mob.mobId === 1001) spriteObj = this.grfSprites.poring;
+    else if (mob.mobId === 1002) spriteObj = this.grfSprites.lunatic;
+    else if (mob.mobId === 1003) spriteObj = this.grfSprites.baphomet;
+
+    if (spriteObj && spriteObj.frames && spriteObj.frames.length > 0) {
+      // --- RENDERIZAR SPRITE ORIGINAL DE GRF ---
+      let frameIdx = 0;
+      const totalFrames = spriteObj.frames.length;
+      
+      if (mob.state === 'dead') {
+        frameIdx = Math.min(totalFrames - 1, 15); // frame de muerte
+      } else {
+        const cycle = Math.floor(Date.now() / 150) % 4; // 4 marcos de caminata
+        frameIdx = cycle % totalFrames;
+      }
+
+      const frame = spriteObj.frames[frameIdx] || spriteObj.frames[0];
+      if (frame) {
+        const sw = frame.width * scale * 1.2;
+        const sh = frame.height * scale * 1.2;
+        
+        // Centrar y dibujar
+        ctx.drawImage(frame, pos.x - sw / 2, pos.y - sh + 5 * scale, sw, sh);
+        
+        // Dibujar barra de vida y nombre
+        if (mob.state !== 'dead') {
+          if (mob.hp < mob.maxHp) {
+            const barW = 28 * this.camera.zoom;
+            const barH = 2.5 * this.camera.zoom;
+            const pct = mob.hp / mob.maxHp;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW, barH);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW * pct, barH);
+          }
+          ctx.fillStyle = '#f87171';
+          ctx.font = `${Math.round(8.5 * this.camera.zoom)}px var(--font-body)`;
+          ctx.textAlign = 'center';
+          ctx.fillText(mob.name, pos.x, pos.y - sh - 6);
+        }
+        
+        if (mob.chatBubble) {
+          this.drawChatBubble(ctx, pos.x, pos.y - sh - 15, mob.chatBubble);
+        }
+        
+        ctx.restore();
+        return;
+      }
+    }
     
     // Animación de Salto / Rebote clásica de Poring
     let bounce = 0;

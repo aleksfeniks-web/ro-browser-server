@@ -13,6 +13,16 @@ class GameMap {
     
     this.waterFrame = 0;
     this.waterTime = 0;
+
+    // Texturas de suelo cargadas dinámicamente del data.grf original
+    this.textures = {
+      grass: new Image(),
+      stone: new Image()
+    };
+    
+    // Asignar rutas de texturas originales
+    this.textures.grass.src = '/api/grf/file?path=data/texture/ÀÌ¹ÌÁöÆÇ/grass01.bmp';
+    this.textures.stone.src = '/api/grf/file?path=data/texture/ÀÌ¹ÌÁöÆÇ/stone01.bmp';
   }
 
   setMapData(data) {
@@ -66,10 +76,37 @@ class GameMap {
     });
   }
 
-  // Dibujar una baldosa de piso procedimentalmente con detalles premium
+  // Dibujar una baldosa de piso procedimentalmente con detalles premium o textura de data.grf
   drawFloorTile(ctx, pos, type, camera) {
     const w = camera.tileWidth * camera.zoom;
     const h = camera.tileHeight * camera.zoom * camera.pitch * 2;
+
+    // Si las texturas del GRF están completamente cargadas, dibujarlas
+    if (type === '.' && this.textures.grass.complete && this.textures.grass.naturalWidth > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y - h / 2);
+      ctx.lineTo(pos.x + w / 2, pos.y);
+      ctx.lineTo(pos.x, pos.y + h / 2);
+      ctx.lineTo(pos.x - w / 2, pos.y);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(this.textures.grass, pos.x - w / 2, pos.y - h / 2, w, h);
+      ctx.restore();
+      return;
+    } else if (type === '+' && this.textures.stone.complete && this.textures.stone.naturalWidth > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y - h / 2);
+      ctx.lineTo(pos.x + w / 2, pos.y);
+      ctx.lineTo(pos.x, pos.y + h / 2);
+      ctx.lineTo(pos.x - w / 2, pos.y);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(this.textures.stone, pos.x - w / 2, pos.y - h / 2, w, h);
+      ctx.restore();
+      return;
+    }
 
     ctx.save();
     ctx.beginPath();
