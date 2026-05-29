@@ -35,7 +35,7 @@
       </div>
       <div class="status-ping">Latencia: <span id="srv-ping">-- ms</span></div>
       <div class="status-players">Jugadores: <span id="srv-players">--</span></div>
-      <button onclick="window.location.href='grf_explorer.html'" class="btn" style="padding: 6px 12px; font-size: 0.75rem; flex: none; width: auto; margin: 0; background: var(--primary);">Cargar data.grf</button>
+      <button id="btn-grf-status" onclick="window.location.href='grf_explorer.html'" class="btn" style="padding: 6px 12px; font-size: 0.75rem; flex: none; width: auto; margin: 0; background: var(--primary); transition: all 0.3s ease;">Cargar data.grf</button>
     </div>
 
     <!-- SECCIÓN 1: Autenticación (Login / Registro) -->
@@ -196,6 +196,8 @@
   </footer>
 
   <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="js/engine/local_grf.js"></script>
   <script src="js/engine/sound.js"></script>
   <script src="js/launcher.js"></script>
 </body>

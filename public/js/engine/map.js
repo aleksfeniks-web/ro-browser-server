@@ -20,9 +20,31 @@ class GameMap {
       stone: new Image()
     };
     
-    // Asignar rutas de texturas originales
-    this.textures.grass.src = '/api/grf/file?path=data/texture/ÀÌ¹ÌÁöÆÇ/grass01.bmp';
-    this.textures.stone.src = '/api/grf/file?path=data/texture/ÀÌ¹ÌÁöÆÇ/stone01.bmp';
+    this.loadGroundTextures();
+  }
+
+  async loadGroundTextures() {
+    const grassPath = 'data/texture/ÀÌ¹ÌÁöÆÇ/grass01.bmp';
+    const stonePath = 'data/texture/ÀÌ¹ÌÁöÆÇ/stone01.bmp';
+
+    // 1. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com)
+    if (window.localGRF && window.localGRF.isLoaded) {
+      try {
+        const grassBytes = await window.localGRF.readBytes(grassPath);
+        const stoneBytes = await window.localGRF.readBytes(stonePath);
+
+        this.textures.grass.src = URL.createObjectURL(new Blob([grassBytes], { type: 'image/bmp' }));
+        this.textures.stone.src = URL.createObjectURL(new Blob([stoneBytes], { type: 'image/bmp' }));
+        console.log('✅ [Map] Texturas cargadas localmente desde data.grf.');
+        return;
+      } catch (err) {
+        console.warn('[Map] No se pudieron cargar texturas localmente, intentando API:', err);
+      }
+    }
+
+    // 2. Intentar cargar desde la API del servidor (Localhost / Fallback)
+    this.textures.grass.src = `/api/grf/file?path=${encodeURIComponent(grassPath)}`;
+    this.textures.stone.src = `/api/grf/file?path=${encodeURIComponent(stonePath)}`;
   }
 
   setMapData(data) {

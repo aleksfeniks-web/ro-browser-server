@@ -12,6 +12,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <!-- JSZip (for batch zip downloads) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- LocalGRF Database Reader -->
+  <script src="js/engine/local_grf.js"></script>
   <!-- CSS -->
   <link rel="stylesheet" href="css/launcher.css">
   <style>
@@ -283,8 +285,21 @@
     });
 
     // --- Lectura de data.grf Oficial (Lado del Cliente) ---
-    function processGRF(file) {
+    async function processGRF(file) {
       grfFile = file;
+      dropZone.innerHTML = `<h3>Procesando <strong>${file.name}</strong> (${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB)...</h3><p>Guardando en base de datos IndexedDB local para el juego...</p>`;
+      
+      // Intentar guardar el archivo GRF en la base de datos IndexedDB local del navegador
+      if (window.localGRF) {
+        try {
+          await window.localGRF.initDB();
+          await window.localGRF.saveGRFFile(file);
+          console.log("✅ data.grf local guardado y persistido en IndexedDB.");
+        } catch (dbErr) {
+          console.error("No se pudo guardar data.grf en IndexedDB local:", dbErr);
+        }
+      }
+      
       dropZone.innerHTML = `<h3>Procesando <strong>${file.name}</strong> (${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB)...</h3><p>Leyendo cabecera binaria...</p>`;
       
       const reader = new FileReader();
@@ -309,10 +324,10 @@
         }
 
         // 2. Leer offsets (estándar GRF 2.0: cabecera de 46 bytes)
-        const fileTableOffset = view.getInt32(30, true);
-        const seed = view.getInt32(34, true);
-        const filesCount = view.getInt32(38, true) - seed - 7;
-        const version = view.getInt32(42, true);
+        const fileTableOffset = view.getUint32(30, true);
+        const seed = view.getUint32(34, true);
+        const filesCount = view.getUint32(38, true) - seed - 7;
+        const version = view.getUint32(42, true);
 
         // Actualizar UI
         document.getElementById('meta-magic').textContent = magic;
@@ -336,8 +351,8 @@
       
       reader.onload = function(e) {
         const view = new DataView(e.target.result);
-        const compressedSize = view.getInt32(0, true);
-        const uncompressedSize = view.getInt32(4, true);
+        const compressedSize = view.getUint32(0, true);
+        const uncompressedSize = view.getUint32(4, true);
 
         document.getElementById('meta-size').textContent = `${(uncompressedSize / 1024).toFixed(0)} KB`;
 
@@ -386,11 +401,11 @@
           if (offset + 17 > bytes.length) break;
 
           // 2. Leer metadatos del archivo
-          const cLen = view.getInt32(offset, true);
-          const uLen = view.getInt32(offset + 4, true);
-          const uLenAligned = view.getInt32(offset + 8, true);
+          const cLen = view.getUint32(offset, true);
+          const uLen = view.getUint32(offset + 4, true);
+          const uLenAligned = view.getUint32(offset + 8, true);
           const flag = view.getUint8(offset + 12);
-          const fileOffset = view.getInt32(offset + 13, true);
+          const fileOffset = view.getUint32(offset + 13, true);
           offset += 17;
 
           // Guardar entrada

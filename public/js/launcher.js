@@ -32,6 +32,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const elSrvPing = document.getElementById('srv-ping');
   const elSrvPlayers = document.getElementById('srv-players');
 
+  // --- Inicializar y verificar data.grf local en IndexedDB ---
+  if (window.localGRF) {
+    window.localGRF.init().then(() => {
+      if (window.localGRF.isLoaded) {
+        const btnGRF = document.getElementById('btn-grf-status');
+        if (btnGRF) {
+          btnGRF.innerHTML = '✅ data.grf Activo';
+          btnGRF.style.background = '#10b981';
+          btnGRF.style.borderColor = '#10b981';
+        }
+      }
+    }).catch(err => console.error('Error al inicializar LocalGRF en launcher:', err));
+  }
+
   const panelAuth = document.getElementById('auth-panel');
   const panelChar = document.getElementById('char-panel');
   const panelCreate = document.getElementById('create-panel');

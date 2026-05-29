@@ -5,6 +5,17 @@
  */
 class SprParser {
   static async loadAndParse(path) {
+    // 1. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com en la nube)
+    if (window.localGRF && window.localGRF.isLoaded) {
+      try {
+        const bytes = await window.localGRF.readBytes(path);
+        return this.parse(bytes.buffer);
+      } catch (err) {
+        console.warn(`[SprParser] No se pudo leer localmente ${path}, intentando desde la API:`, err);
+      }
+    }
+
+    // 2. Intentar cargar desde la API del servidor (Localhost / Fallback)
     const url = `/api/grf/file?path=${encodeURIComponent(path)}`;
     const response = await fetch(url);
     if (!response.ok) {

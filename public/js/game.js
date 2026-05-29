@@ -956,8 +956,16 @@ class Game {
 }
 
 // Iniciar aplicación al cargar todo
-window.onload = () => {
+window.onload = async () => {
   if (window.location.pathname.endsWith('game.html')) {
+    if (window.localGRF) {
+      try {
+        console.log('🔄 [LocalGRF] Inicializando base de datos local GRF antes del motor...');
+        await window.localGRF.init();
+      } catch (err) {
+        console.error('❌ [LocalGRF] Fallo al inicializar LocalGRF:', err);
+      }
+    }
     window.gameInstance = new Game();
   }
 };
