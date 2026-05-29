@@ -270,9 +270,15 @@ app.get('/api/grf/file', (req, res) => {
   }
 
   const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
+  const originalCleanPath = filePath.replace(/\\/g, '/');
 
   // 1. Si existe un archivo pre-extraído en la carpeta public/, servirlo directamente (ideal para Render.com en la nube)
-  const localPreExtractedPath = path.join(__dirname, 'public', cleanPath);
+  // Soporta tanto rutas en minúsculas como con mayúsculas originales en sistemas Linux sensibles a mayúsculas
+  let localPreExtractedPath = path.join(__dirname, 'public', originalCleanPath);
+  if (!fs.existsSync(localPreExtractedPath)) {
+    localPreExtractedPath = path.join(__dirname, 'public', cleanPath);
+  }
+
   if (fs.existsSync(localPreExtractedPath)) {
     let contentType = 'application/octet-stream';
     if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
