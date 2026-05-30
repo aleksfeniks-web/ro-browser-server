@@ -1,14 +1,56 @@
 /**
- * WebRO - Client main controller & 60 FPS Isometric Engine
+ * WebRO - Client Main Controller & Three.js 3D WebGL Engine
+ * Manages the core game loop, network packets, 3D coordinate mapping,
+ * vertical billboard entity rendering, and projected 2D overlays.
  */
 class Game {
   constructor() {
     this.canvas = document.getElementById('game-canvas');
-    this.ctx = this.canvas.getContext('2d');
+    
+    // --- INICIALIZAR RENDERIZADOR WEBGL 3D ---
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: false
+    });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // --- CREAR CAPA CANVASES 2D OVERLAYS ---
+    // Esta capa transparente se dibuja encima del canvas 3D y muestra nombres,
+    // burbujas de chat y flotantes de daño con precisión matemática proyectada.
+    this.overlayCanvas = document.createElement('canvas');
+    this.overlayCanvas.id = 'game-overlay-canvas';
+    this.overlayCanvas.style.position = 'absolute';
+    this.overlayCanvas.style.top = '0';
+    this.overlayCanvas.style.left = '0';
+    this.overlayCanvas.style.width = '100%';
+    this.overlayCanvas.style.height = '100%';
+    this.overlayCanvas.style.pointerEvents = 'none'; // Clics traspasan al canvas 3D inferior
+    this.overlayCanvas.style.zIndex = '5';
+    document.body.appendChild(this.overlayCanvas);
+    this.ctx = this.overlayCanvas.getContext('2d');
     
     this.loading = true;
     this.lastTime = 0;
     
+    // --- INICIALIZAR ESCENA 3D ---
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color('#05070c');
+    this.scene.fog = new THREE.FogExp2('#05070c', 0.012); // Neblina atmosférica oscura
+
+    // --- LUCES DE LA ESCENA ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    this.scene.add(ambientLight);
+    
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.75);
+    dirLight.position.set(25, 45, 15);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    this.scene.add(dirLight);
+
     // Módulos
     this.camera = new Camera();
     this.map = new GameMap();
@@ -51,6 +93,9 @@ class Game {
     // Crear Instancia global de UI
     window.UI = new UIController(this);
 
+    // Vincular escena 3D al mapa
+    this.map.init3DScene(this.scene);
+
     // Cargar sprites originales del GRF
     this.loadOriginalSprites();
 
@@ -59,9 +104,17 @@ class Game {
   }
 
   resizeCanvas() {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
-    this.camera.resize(this.canvas.width, this.canvas.height);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    
+    this.canvas.width = w;
+    this.canvas.height = h;
+    
+    this.overlayCanvas.width = w;
+    this.overlayCanvas.height = h;
+    
+    this.renderer.setSize(w, h);
+    this.camera.resize(w, h);
   }
 
   async loadOriginalSprites() {
@@ -86,14 +139,13 @@ class Game {
 
     this.canvas.addEventListener('mousedown', (e) => {
       this.canvas.focus();
-      // Asegurar que AudioContext empiece tras interacción del usuario
       if (window.soundManager) window.soundManager.init();
 
       if (e.button === 0) {
-        // Clic Izquierdo: Movimiento o Ataque
+        // Clic Izquierdo: Movimiento o Ataque (Raycaster)
         this.handleLeftClick(e.clientX, e.clientY);
       } else if (e.button === 2) {
-        // Clic Derecho: Rotar Cámara
+        // Clic Derecho: Rotar Cámara Orbital
         this.isDragging = true;
         this.lastMouseX = e.clientX;
         this.lastMouseY = e.clientY;
@@ -102,7 +154,7 @@ class Game {
 
     this.canvas.addEventListener('mousemove', (e) => {
       if (this.isDragging) {
-        // Rotar cámara isométricamente por arrastre
+        // Rotar cámara orbital en 3D
         const dx = e.clientX - this.lastMouseX;
         this.camera.addRotation(dx * 0.007);
         this.lastMouseX = e.clientX;
@@ -116,7 +168,7 @@ class Game {
       }
     });
 
-    // Zoom con Rueda del Mouse
+    // Zoom con Rueda del Mouse en 3D
     this.canvas.addEventListener('wheel', (e) => {
       this.camera.addZoom(-e.deltaY * 0.0008);
     }, { passive: true });
@@ -125,10 +177,10 @@ class Game {
   handleLeftClick(mouseX, mouseY) {
     if (this.loading || !this.localPlayer || this.localPlayer.hp <= 0) return;
 
-    // Convertir clic de pantalla a celda de la grilla
+    // Convertir clic de pantalla a celda de la grilla 3D mediante Raycasting
     const gridPos = this.camera.screenToTile(mouseX, mouseY);
 
-    // 1. Comprobar si clicó en una entidad (Monstruo u otro Jugador)
+    // 1. Comprobar si clicó en una entidad
     let clickedEntityId = null;
     let clickedEntity = null;
 
@@ -142,18 +194,14 @@ class Game {
 
     if (clickedEntityId) {
       if (clickedEntity.type === 'monster') {
-        // Seleccionar como objetivo clásico de ataque
         this.selectedTargetId = clickedEntityId;
         
-        // Lanzar ataque directo si ya está a rango
         const dist = Math.max(Math.abs(this.localPlayer.x - clickedEntity.x), Math.abs(this.localPlayer.y - clickedEntity.y));
         if (dist <= 1.8) {
           this.network.sendAttack(clickedEntityId);
         } else {
-          // Si está lejos, caminar hacia él
           const path = Pathfinding.findPath(this.map.grid, this.localPlayer, clickedEntity);
           if (path.length > 0) {
-            // Recortar último paso para no pararse encima
             path.pop();
             if (path.length > 0) {
               this.localPlayer.path = path;
@@ -172,7 +220,7 @@ class Game {
       return;
     }
 
-    // 2. Si no clicó en monstruo, es un clic de movimiento en grilla libre
+    // 2. Clic de movimiento libre en celda libre
     if (!Pathfinding.isBlocked(this.map.grid, gridPos.x, gridPos.y)) {
       const path = Pathfinding.findPath(this.map.grid, this.localPlayer, gridPos);
       if (path.length > 0) {
@@ -185,10 +233,9 @@ class Game {
         this.localPlayer.lerpProgress = 0;
         this.localPlayer.state = 'moving';
         
-        // Enviar ruta calculada al servidor
         this.network.sendMove([nextStep, ...this.localPlayer.path]);
 
-        // Crear una pequeña onda visual de clic en el suelo
+        // Partícula visual 2D proyectada
         this.particleEffects.push({
           x: gridPos.x,
           y: gridPos.y,
@@ -216,12 +263,12 @@ class Game {
   update(deltaTime) {
     if (this.loading) return;
 
-    // 1. Actualizar Cámara con respecto a Jugador Local
+    // 1. Actualizar Cámara Orbital siguiendo al jugador
     if (this.localPlayer) {
       this.camera.update(this.localPlayer.x, this.localPlayer.y, deltaTime);
     }
 
-    // 2. Actualizar Mapa (Animación del agua, etc.)
+    // 2. Actualizar Mapa (Fuentes, agua, portales)
     this.map.update(deltaTime);
 
     // 3. Interpolación suave de Movimiento para Jugador Local
@@ -238,7 +285,6 @@ class Game {
       if (target && target.hp > 0) {
         const dist = Math.max(Math.abs(this.localPlayer.x - target.x), Math.abs(this.localPlayer.y - target.y));
         if (dist <= 1.8) {
-          // Bucle de auto-ataque periódico simple basado en AGI
           const attackSpeed = Math.max(300, 1500 - (this.localPlayer.agi * 14));
           if (!this.lastAttackTime || Date.now() - this.lastAttackTime > attackSpeed) {
             this.network.sendAttack(this.selectedTargetId);
@@ -246,14 +292,14 @@ class Game {
           }
         }
       } else {
-        this.selectedTargetId = null; // Quitar target si murió
+        this.selectedTargetId = null;
       }
     }
 
     // 6. Actualizar flotantes de Daño (Pops)
     this.damagePops.forEach((pop, idx) => {
-      pop.y += pop.vy * 0.05; // Subir verticalmente
-      pop.life -= deltaTime * 0.0016; // Durar unos 600ms
+      pop.y += pop.vy * 0.05;
+      pop.life -= deltaTime * 0.0016;
       if (pop.life <= 0) {
         this.damagePops.splice(idx, 1);
       }
@@ -282,37 +328,37 @@ class Game {
   }
 
   interpolateEntityMovement(ent, deltaTime) {
-    if (!ent || ent.state !== 'moving') return;
+    if (!ent) return;
 
-    if (ent.lerpProgress === undefined) ent.lerpProgress = 1;
+    if (ent.state === 'moving') {
+      if (ent.lerpProgress === undefined) ent.lerpProgress = 1;
 
-    // Calcular avance del paso basado en la velocidad (speed es tiempo en ms por celda)
-    const stepDuration = ent.speed || 150;
-    ent.lerpProgress += deltaTime / stepDuration;
+      const stepDuration = ent.speed || 150;
+      ent.lerpProgress += deltaTime / stepDuration;
 
-    if (ent.lerpProgress >= 1.0) {
-      ent.x = ent.targetX;
-      ent.y = ent.targetY;
-      
-      if (ent.path && ent.path.length > 0) {
-        const nextStep = ent.path.shift();
-        ent.startX = ent.x;
-        ent.startY = ent.y;
-        ent.targetX = nextStep.x;
-        ent.targetY = nextStep.y;
-        ent.lerpProgress = 0;
-        ent.state = 'moving';
+      if (ent.lerpProgress >= 1.0) {
+        ent.x = ent.targetX;
+        ent.y = ent.targetY;
+        
+        if (ent.path && ent.path.length > 0) {
+          const nextStep = ent.path.shift();
+          ent.startX = ent.x;
+          ent.startY = ent.y;
+          ent.targetX = nextStep.x;
+          ent.targetY = nextStep.y;
+          ent.lerpProgress = 0;
+          ent.state = 'moving';
+        } else {
+          ent.lerpProgress = 1.0;
+          ent.state = 'idle';
+        }
       } else {
-        ent.lerpProgress = 1.0;
-        ent.state = 'idle';
+        ent.x = ent.startX + (ent.targetX - ent.startX) * ent.lerpProgress;
+        ent.y = ent.startY + (ent.targetY - ent.startY) * ent.lerpProgress;
       }
-    } else {
-      // Interpolación lineal
-      ent.x = ent.startX + (ent.targetX - ent.startX) * ent.lerpProgress;
-      ent.y = ent.startY + (ent.targetY - ent.startY) * ent.lerpProgress;
     }
 
-    // Animación de pie
+    // Actualizar animación
     ent.animTime = (ent.animTime || 0) + deltaTime;
     if (ent.animTime > 120) {
       ent.animFrame = ((ent.animFrame || 0) + 1) % 4;
@@ -320,579 +366,303 @@ class Game {
     }
   }
 
+  // --- Sincronizar Representación 3D en la Escena Three.js ---
+  getOrCreateEntity3D(ent) {
+    if (!ent) return null;
+
+    if (ent.threeGroup) {
+      // Retornar si ya existe
+      return ent.threeGroup;
+    }
+
+    const group = new THREE.Group();
+    group.position.set(ent.x, 0.1, ent.y);
+    this.scene.add(group);
+    ent.threeGroup = group;
+
+    // Crear Billboard Sprite para alojar texturas del Sprite (.spr)
+    const mat = new THREE.SpriteMaterial({
+      transparent: true,
+      depthWrite: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.5, 1.5, 1.0);
+    sprite.position.y = 0.65; // Elevar sobre el plano del suelo
+    group.add(sprite);
+
+    // Sprite extra para cabeza/cabello y que se encimen correctamente
+    const headMat = new THREE.SpriteMaterial({
+      transparent: true,
+      depthWrite: false
+    });
+    const headSprite = new THREE.Sprite(headMat);
+    headSprite.scale.set(1.5, 1.5, 1.0);
+    headSprite.position.y = 0.65;
+    group.add(headSprite);
+
+    // Fallback geométrico 3D si no hay sprites del GRF
+    const geoFallback = new THREE.CylinderGeometry(0.12, 0.12, 0.8, 8);
+    const colorFallback = ent.type === 'player' ? 0x0ea5e9 : 0xef4444;
+    const matFallback = new THREE.MeshStandardMaterial({ color: colorFallback });
+    const meshFallback = new THREE.Mesh(geoFallback, matFallback);
+    meshFallback.position.y = 0.4;
+    meshFallback.visible = false;
+    group.add(meshFallback);
+
+    group.userData = {
+      sprite,
+      headSprite,
+      fallback: meshFallback
+    };
+
+    return group;
+  }
+
+  removeEntity3D(ent) {
+    if (ent && ent.threeGroup) {
+      this.scene.remove(ent.threeGroup);
+      
+      ent.threeGroup.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      });
+
+      ent.threeGroup = null;
+    }
+  }
+
+  clearAllEntities3D() {
+    Object.keys(this.entities).forEach(id => {
+      this.removeEntity3D(this.entities[id]);
+    });
+    if (this.localPlayer) {
+      this.removeEntity3D(this.localPlayer);
+    }
+  }
+
   // --- Dibujar Canvas Completo ---
   render() {
-    this.ctx.fillStyle = '#05070c'; // Espacio oscuro premium
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // 1. Limpiar el Canvas de Overlays 2D
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (this.loading) return;
 
-    // 1. Dibujar el Suelo (Césped, caminos, agua)
-    this.map.drawGround(this.ctx, this.camera);
-
-    // 2. Colectar todos los elementos verticales que requieren ordenamiento en 2.5D (Profundidad)
-    let renderables = [];
-
-    // Obstáculos del mapa (árboles, muros, fuente)
-    const obstacles = this.map.getObstacles(this.camera);
-    renderables = renderables.concat(obstacles);
-
-    // Jugador Local
+    // 2. Sincronizar Jugador Local en la escena 3D
     if (this.localPlayer) {
-      renderables.push({
-        type: 'player',
-        ref: this.localPlayer,
-        depth: this.localPlayer.x + this.localPlayer.y
-      });
+      const g = this.getOrCreateEntity3D(this.localPlayer);
+      if (g) g.position.set(this.localPlayer.x, 0.1, this.localPlayer.y);
+      this.syncSpriteTexture(this.localPlayer);
     }
 
-    // Monstruos y otros jugadores
+    // 3. Sincronizar Monstruos y otros jugadores
     Object.keys(this.entities).forEach(id => {
       const ent = this.entities[id];
-      renderables.push({
-        type: ent.type,
-        ref: ent,
-        depth: ent.x + ent.y
-      });
+      const g = this.getOrCreateEntity3D(ent);
+      if (g) g.position.set(ent.x, 0.1, ent.y);
+      this.syncSpriteTexture(ent);
     });
 
-    // 3. ORDENAR ELEMENTOS POR PROFUNDIDAD (Pintado de Atrás hacia Adelante)
-    // El criterio isométrico clásico es: menor valor de (x + y) se dibuja primero.
-    renderables.sort((a, b) => a.depth - b.depth);
+    // 4. RENDERIZAR ESCENA 3D (Three.js WebGL)
+    this.renderer.render(this.scene, this.camera.camera3D);
 
-    // 4. DIBUJAR ELEMENTOS ORDENADOS
-    renderables.forEach(item => {
-      if (item.type === 'obstacle') {
-        this.map.drawObstacle(this.ctx, item, this.camera);
-      } else if (item.type === 'player') {
-        this.drawPlayerSprite(this.ctx, item.ref);
-      } else if (item.type === 'monster') {
-        this.drawMonsterSprite(this.ctx, item.ref);
+    // 5. RENDERIZAR CAPA DE OVERLAYS 2D PROYECTADA
+    // Llamar a los dibujadores de UI pasándole el 2D context
+    if (this.localPlayer) {
+      this.drawPlayerOverlays(this.ctx, this.localPlayer);
+    }
+    
+    Object.keys(this.entities).forEach(id => {
+      const ent = this.entities[id];
+      if (ent.type === 'player') {
+        this.drawPlayerOverlays(this.ctx, ent);
+      } else {
+        this.drawMonsterOverlays(this.ctx, ent);
       }
     });
 
-    // 5. Dibujar Guía de Ruta del Pathfinder si hay destino clicado
-    this.drawPathGuide();
-
-    // 6. Dibujar Partículas
+    // 6. Dibujar Partículas y Efectos de Clic
     this.drawParticles();
 
-    // 7. Dibujar Pops de Daño flotando
+    // 7. Dibujar pops de daño
     this.drawDamagePops();
 
-    // 8. Dibujar indicador de Target / Objetivo Activo
+    // 8. Dibujar indicador de Target seleccionado
     this.drawTargetIndicator();
 
     // 9. Actualizar Minimapa en la UI
-    if (window.UI && Math.random() < 0.1) { // Reducir frecuencia de dibujado de minimapa para optimizar
+    if (window.UI && Math.random() < 0.1) {
       window.UI.drawMinimap();
     }
   }
 
-  // --- Dibujar Jugador ---
-  drawPlayerSprite(ctx, char) {
-    const pos = this.camera.tileToScreen(char.x, char.y);
-    const w = this.camera.tileWidth * this.camera.zoom;
-    const h = this.camera.tileHeight * this.camera.zoom * this.camera.pitch * 2;
+  // Sincronizar texturas originales del Sprite (.spr) en los Billboards 3D
+  syncSpriteTexture(char) {
+    if (!char.threeGroup) return;
 
-    ctx.save();
+    const { sprite, headSprite, fallback } = char.threeGroup.userData;
 
-    // 1. Sombra circular
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y + 2, w / 3, h / 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // Determinar sprite de cuerpo
+    let spriteObj = null;
+    let headSpriteObj = null;
 
-    const scale = this.camera.zoom * 0.9;
-    
-    // Determinar si tenemos un sprite del GRF cargado
-    const isMale = char.gender !== 'F';
-    const spriteObj = isMale ? this.grfSprites.novice_male : this.grfSprites.novice_female;
+    if (char.type === 'player') {
+      const isMale = char.gender !== 'F';
+      spriteObj = isMale ? this.grfSprites.novice_male : this.grfSprites.novice_female;
+
+      // Intentar buscar cabeza en cache
+      const genderKey = char.gender === 'F' ? 'female' : 'male';
+      const cacheKey = `${genderKey}_${char.hair}`;
+      const cached = this.grfHeadSprites[cacheKey];
+      if (cached && cached.frames) {
+        headSpriteObj = cached;
+      }
+    } else {
+      // Monstruo
+      if (char.mobId === 1001) spriteObj = this.grfSprites.poring;
+      else if (char.mobId === 1002) spriteObj = this.grfSprites.lunatic;
+      else if (char.mobId === 1003) spriteObj = this.grfSprites.baphomet;
+    }
 
     if (spriteObj && spriteObj.frames && spriteObj.frames.length > 0) {
-      // --- RENDERIZAR CUERPO NOVICE ORIGINAL DE GRF ---
+      // --- USO DE TEXTURAS ORIGINALES DE GRF ---
+      sprite.visible = true;
+      fallback.visible = false;
+
+      // Pre-generar CanvasTextures en Three.js con filtro Nearest
+      if (!spriteObj.threeTextures) {
+        spriteObj.threeTextures = spriteObj.frames.map(canvas => {
+          if (!canvas) return null;
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.minFilter = THREE.NearestFilter;
+          tex.magFilter = THREE.NearestFilter; // Mantener hermoso aspecto pixel-art retro!
+          return tex;
+        });
+      }
+
+      // Animaciones de Frames
       let frameIdx = 0;
-      const totalFrames = spriteObj.frames.length;
-      
       if (char.state === 'moving') {
-        const cycle = Math.floor(Date.now() / 100) % 8; // 8 celdas de caminata
-        frameIdx = cycle % totalFrames;
+        const cycle = Math.floor(Date.now() / 100) % 8;
+        frameIdx = cycle % spriteObj.frames.length;
+      } else if (char.state === 'dead') {
+        frameIdx = Math.min(spriteObj.frames.length - 1, 15);
       } else {
-        // Idle
         frameIdx = 0;
       }
 
-      const frame = spriteObj.frames[frameIdx] || spriteObj.frames[0];
-      if (frame) {
-        const sw = frame.width * scale * 1.3;
-        const sh = frame.height * scale * 1.3;
-        
-        // Centrar y dibujar el cuerpo GRF original animado
-        ctx.drawImage(frame, pos.x - sw / 2, pos.y - sh + 5 * scale, sw, sh);
-        
-        // --- DIBUJAR CABEZA Y CABELLO ESTILIZADOS SOBRE EL CUERPO ---
-        const headY = pos.y - sh + 14 * scale;
-        const charColor = this.getHairColorHex(char.hairColor);
+      const tex = spriteObj.threeTextures[frameIdx] || spriteObj.threeTextures[0];
+      if (tex) {
+        sprite.material.map = tex;
+        sprite.material.needsUpdate = true;
+      }
 
-        const genderKey = char.gender === 'F' ? 'female' : 'male';
-        const cacheKey = `${genderKey}_${char.hair}`;
-        
-        if (this.grfHeadSprites[cacheKey] === undefined) {
-          this.grfHeadSprites[cacheKey] = null; // Marcar como cargando
-          const genderFolder = char.gender === 'F' ? '¿©' : '³²';
-          const sprPath = `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/${char.hair}_${genderFolder}.spr`;
-          
-          SprParser.loadAndParse(sprPath).then(sObj => {
-            this.grfHeadSprites[cacheKey] = sObj;
-            console.log(`✅ [Head] Sprite original de cabeza cargado para ${cacheKey}`);
-          }).catch(err => {
-            this.grfHeadSprites[cacheKey] = false; // Fallido
-            console.warn(`⚠️ [Head] No se pudo cargar cabeza para ${cacheKey}:`, err);
+      // --- SINCRONIZAR CABEZA SI ES UN JUGADOR ---
+      if (headSpriteObj && headSpriteObj.frames && headSpriteObj.frames.length > 0) {
+        headSprite.visible = true;
+
+        if (!headSpriteObj.threeTextures) {
+          headSpriteObj.threeTextures = headSpriteObj.frames.map(canvas => {
+            if (!canvas) return null;
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            return tex;
           });
         }
 
-        const headSpriteObj = this.grfHeadSprites[cacheKey];
-        if (headSpriteObj && headSpriteObj.frames && headSpriteObj.frames.length > 0) {
-          // Sincronizar el marco/dirección de la cabeza con el cuerpo
-          const headFrameIdx = frameIdx % headSpriteObj.frames.length;
-          const headFrame = headSpriteObj.frames[headFrameIdx] || headSpriteObj.frames[0];
-          if (headFrame) {
-            const hsw = headFrame.width * scale * 1.3;
-            const hsh = headFrame.height * scale * 1.3;
-            // Dibujar la cabeza real extraída del GRF
-            ctx.drawImage(headFrame, pos.x - hsw / 2, headY - hsh + 4 * scale, hsw, hsh);
-          }
-        } else {
-          // --- FALLBACK: PROCEDURAL HEAD ---
-          // Cara
-          ctx.fillStyle = '#fbc4b2';
-          ctx.beginPath();
-          ctx.arc(pos.x, headY, 5 * scale, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Ojos
-          ctx.fillStyle = '#1e293b';
-          ctx.beginPath();
-          ctx.arc(pos.x - 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
-          ctx.arc(pos.x + 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Cabello según Estilo
-          ctx.fillStyle = charColor;
-          if (char.hair === 1) { // Cabello Largo
-            ctx.beginPath();
-            ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
-            ctx.quadraticCurveTo(pos.x, headY - 8 * scale, pos.x + 6 * scale, headY + 1 * scale);
-            ctx.quadraticCurveTo(pos.x + 7 * scale, headY + 6 * scale, pos.x + 4 * scale, headY + 6 * scale);
-            ctx.lineTo(pos.x - 4 * scale, headY + 6 * scale);
-            ctx.closePath();
-            ctx.fill();
-          } else if (char.hair === 2) { // Espinado (Punk)
-            ctx.beginPath();
-            ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
-            ctx.lineTo(pos.x - 8 * scale, headY - 4 * scale);
-            ctx.lineTo(pos.x - 3 * scale, headY - 3 * scale);
-            ctx.lineTo(pos.x, headY - 8 * scale);
-            ctx.lineTo(pos.x + 3 * scale, headY - 3 * scale);
-            ctx.lineTo(pos.x + 8 * scale, headY - 4 * scale);
-            ctx.lineTo(pos.x + 6 * scale, headY + 1 * scale);
-            ctx.closePath();
-            ctx.fill();
-          } else { // Cabello Corto
-            ctx.beginPath();
-            ctx.arc(pos.x, headY - 2 * scale, 5.5 * scale, Math.PI, 0, false);
-            ctx.fill();
-          }
+        const headFrameIdx = frameIdx % headSpriteObj.frames.length;
+        const headTex = headSpriteObj.threeTextures[headFrameIdx] || headSpriteObj.threeTextures[0];
+        if (headTex) {
+          headSprite.material.map = headTex;
+          headSprite.material.needsUpdate = true;
         }
-
-        // Sombrero si tiene (Poring Hat)
-        if (char.equipment && char.equipment.headgear === 2201) {
-          ctx.fillStyle = '#fda4af'; // Rosa poring
-          ctx.beginPath();
-          ctx.arc(pos.x, headY - 6 * scale, 4.5 * scale, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#f43f5e';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-
-          // Ojitos del sombrero poring
-          ctx.fillStyle = '#fff';
-          ctx.beginPath();
-          ctx.arc(pos.x - 1.8 * scale, headY - 6 * scale, 0.7 * scale, 0, Math.PI * 2);
-          ctx.arc(pos.x + 1.8 * scale, headY - 6 * scale, 0.7 * scale, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (char.equipment && char.equipment.headgear === 2202) { // Cinta
-          ctx.fillStyle = '#ef4444'; // Cinta Roja
-          ctx.beginPath();
-          ctx.ellipse(pos.x, headY - 5 * scale, 3.5 * scale, 1.5 * scale, 0.2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // Arma (Espada/Cuchillo en mano)
-        if (char.equipment && char.equipment.weapon) {
-          ctx.strokeStyle = '#cbd5e1'; // Metal
-          ctx.lineWidth = 2 * scale;
-          ctx.beginPath();
-          ctx.moveTo(pos.x + 6 * scale, pos.y - 12 * scale);
-          ctx.lineTo(pos.x + 16 * scale, pos.y - 18 * scale);
-          ctx.stroke();
-        }
-
-        // Barra de Vida
-        if (char.hp < char.maxHp && char.hp > 0) {
-          const barW = 32 * this.camera.zoom;
-          const barH = 3 * this.camera.zoom;
-          const pct = char.hp / char.maxHp;
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
-          ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW, barH);
-          ctx.fillStyle = '#10b981';
-          ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW * pct, barH);
-        }
-
-        // Nombre
-        ctx.fillStyle = '#f1f5f9';
-        ctx.font = `bold ${Math.round(10 * this.camera.zoom)}px var(--font-body)`;
-        ctx.textAlign = 'center';
-        ctx.fillText(char.name, pos.x, pos.y - sh - 6);
-
-        if (char.chatBubble) {
-          this.drawChatBubble(ctx, pos.x, pos.y - sh - 15, char.chatBubble);
-        }
-
-        ctx.restore();
-        return;
+      } else {
+        headSprite.visible = false;
       }
+
+    } else {
+      // --- FALLBACK VECTORIAL A FALTA DE DATA.GRF ---
+      sprite.visible = false;
+      headSprite.visible = false;
+      fallback.visible = true;
     }
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y + 2, w / 3, h / 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+  }
 
-    // Pequeño balanceo por animación de movimiento
-    let bob = 0;
-    if (char.state === 'moving') {
-      bob = Math.abs(Math.sin((char.animFrame || 0) * Math.PI / 2)) * 4 * this.camera.zoom;
-    }
-
-    // 2. Dibujar Cuerpo del Personaje
-    const charColor = this.getHairColorHex(char.hairColor);
-
-    // Traje según Clase
-    let clothColor = '#38bdf8'; // Novice celeste
-    if (char.job === 'Swordman') clothColor = '#e2e8f0'; // Swordman metalico gris
-    else if (char.job === 'Mage') clothColor = '#a855f7'; // Mago morado
-
-    // Renderizar cuerpo con vector simple estilizado pixel-retro
-    ctx.fillStyle = clothColor;
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y - 12 * scale - bob, 8 * scale, 12 * scale, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    ctx.stroke();
-
-    // Cabeza (Cara)
-    ctx.fillStyle = '#fbc4b2'; // Piel clara
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y - 25 * scale - bob, 6 * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ojos
-    ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.arc(pos.x - 2 * scale, pos.y - 26 * scale - bob, 0.8 * scale, 0, Math.PI * 2);
-    ctx.arc(pos.x + 2 * scale, pos.y - 26 * scale - bob, 0.8 * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Cabello
-    ctx.fillStyle = charColor;
-    if (char.hair === 1) { // Cabello Largo
-      ctx.beginPath();
-      ctx.moveTo(pos.x - 7 * scale, pos.y - 24 * scale - bob);
-      ctx.quadraticCurveTo(pos.x, pos.y - 34 * scale - bob, pos.x + 7 * scale, pos.y - 24 * scale - bob);
-      ctx.quadraticCurveTo(pos.x + 8 * scale, pos.y - 18 * scale - bob, pos.x + 5 * scale, pos.y - 18 * scale - bob);
-      ctx.lineTo(pos.x - 5 * scale, pos.y - 18 * scale - bob);
-      ctx.closePath();
-      ctx.fill();
-    } else if (char.hair === 2) { // Espinado (Punk)
-      ctx.beginPath();
-      ctx.moveTo(pos.x - 7 * scale, pos.y - 24 * scale - bob);
-      ctx.lineTo(pos.x - 9 * scale, pos.y - 29 * scale - bob);
-      ctx.lineTo(pos.x - 4 * scale, pos.y - 28 * scale - bob);
-      ctx.lineTo(pos.x, pos.y - 34 * scale - bob);
-      ctx.lineTo(pos.x + 4 * scale, pos.y - 28 * scale - bob);
-      ctx.lineTo(pos.x + 9 * scale, pos.y - 29 * scale - bob);
-      ctx.lineTo(pos.x + 7 * scale, pos.y - 24 * scale - bob);
-      ctx.closePath();
-      ctx.fill();
-    } else { // Corto
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - 28 * scale - bob, 7 * scale, 4 * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Dibujar Sombrero si tiene (Poring Hat)
-    if (char.equipment && char.equipment.headgear === 2201) {
-      ctx.fillStyle = '#fda4af'; // Rosa poring
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y - 31 * scale - bob, 5 * scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#f43f5e';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // Ojitos del sombrero poring
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(pos.x - 2 * scale, pos.y - 31 * scale - bob, 0.8 * scale, 0, Math.PI * 2);
-      ctx.arc(pos.x + 2 * scale, pos.y - 31 * scale - bob, 0.8 * scale, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (char.equipment && char.equipment.headgear === 2202) { // Cinta
-      ctx.fillStyle = '#ef4444'; // Cinta Roja
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - 30 * scale - bob, 4 * scale, 1.8 * scale, 0.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Arma (Espada/Cuchillo en mano)
-    if (char.equipment && char.equipment.weapon) {
-      ctx.strokeStyle = '#cbd5e1'; // Metal
-      ctx.lineWidth = 2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(pos.x + 6 * scale, pos.y - 12 * scale - bob);
-      ctx.lineTo(pos.x + 16 * scale, pos.y - 18 * scale - bob);
-      ctx.stroke();
-    }
-
-    // 3. Barra de Vida reducida clásica (solo si está dañado)
+  // --- DIBUJAR CAPA OVERLAYS 2D PARA JUGADORES ---
+  drawPlayerOverlays(ctx, char) {
+    const pos = this.camera.tileToScreen(char.x, char.y, 1.2); // Proyectar 1.2 unidades arriba del suelo
+    
+    ctx.save();
+    
+    // HP Bar
     if (char.hp < char.maxHp && char.hp > 0) {
       const barW = 32 * this.camera.zoom;
       const barH = 3 * this.camera.zoom;
       const pct = char.hp / char.maxHp;
-
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(pos.x - barW / 2, pos.y - 42 * scale - bob, barW, barH);
-      ctx.fillStyle = '#10b981'; // Verde vida
-      ctx.fillRect(pos.x - barW / 2, pos.y - 42 * scale - bob, barW * pct, barH);
+      ctx.fillRect(pos.x - barW / 2, pos.y - 2, barW, barH);
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(pos.x - barW / 2, pos.y - 2, barW * pct, barH);
     }
 
-    // 4. Nombre flotante clásico de RO (Gris suave)
+    // Nombre
     ctx.fillStyle = '#f1f5f9';
     ctx.font = `bold ${Math.round(10 * this.camera.zoom)}px var(--font-body)`;
     ctx.textAlign = 'center';
-    ctx.fillText(char.name, pos.x, pos.y - 46 * scale - bob);
+    ctx.fillText(char.name, pos.x, pos.y - 6);
 
-    // Burbuja de Chat flotante
+    // Burbuja de Chat
     if (char.chatBubble) {
-      this.drawChatBubble(ctx, pos.x, pos.y - 65 * scale - bob, char.chatBubble);
+      this.drawChatBubble(ctx, pos.x, pos.y - 15, char.chatBubble);
     }
 
     ctx.restore();
   }
 
-  // --- Dibujar Monstruo (Poring, Lunatic, Baphomet Jr) ---
-  drawMonsterSprite(ctx, mob) {
-    const pos = this.camera.tileToScreen(mob.x, mob.y);
-    const w = this.camera.tileWidth * this.camera.zoom;
-    const h = this.camera.tileHeight * this.camera.zoom * this.camera.pitch * 2;
+  // --- DIBUJAR CAPA OVERLAYS 2D PARA MONSTRUOS ---
+  drawMonsterOverlays(ctx, mob) {
+    if (mob.state === 'dead') return;
 
+    const pos = this.camera.tileToScreen(mob.x, mob.y, 0.9);
+    
     ctx.save();
 
-    // 1. Sombra
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y + 1, w / 3.5, h / 3.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const scale = this.camera.zoom * (mob.scale || 1.0);
-    
-    // Determinar si tenemos un sprite del GRF cargado
-    let spriteObj = null;
-    if (mob.mobId === 1001) spriteObj = this.grfSprites.poring;
-    else if (mob.mobId === 1002) spriteObj = this.grfSprites.lunatic;
-    else if (mob.mobId === 1003) spriteObj = this.grfSprites.baphomet;
-
-    if (spriteObj && spriteObj.frames && spriteObj.frames.length > 0) {
-      // --- RENDERIZAR SPRITE ORIGINAL DE GRF ---
-      let frameIdx = 0;
-      const totalFrames = spriteObj.frames.length;
-      
-      if (mob.state === 'dead') {
-        frameIdx = Math.min(totalFrames - 1, 15); // frame de muerte
-      } else {
-        const cycle = Math.floor(Date.now() / 150) % 4; // 4 marcos de caminata
-        frameIdx = cycle % totalFrames;
-      }
-
-      const frame = spriteObj.frames[frameIdx] || spriteObj.frames[0];
-      if (frame) {
-        const sw = frame.width * scale * 1.2;
-        const sh = frame.height * scale * 1.2;
-        
-        // Centrar y dibujar
-        ctx.drawImage(frame, pos.x - sw / 2, pos.y - sh + 5 * scale, sw, sh);
-        
-        // Dibujar barra de vida y nombre
-        if (mob.state !== 'dead') {
-          if (mob.hp < mob.maxHp) {
-            const barW = 28 * this.camera.zoom;
-            const barH = 2.5 * this.camera.zoom;
-            const pct = mob.hp / mob.maxHp;
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW, barH);
-            ctx.fillStyle = '#ef4444';
-            ctx.fillRect(pos.x - barW / 2, pos.y - sh - 2, barW * pct, barH);
-          }
-          ctx.fillStyle = '#f87171';
-          ctx.font = `${Math.round(8.5 * this.camera.zoom)}px var(--font-body)`;
-          ctx.textAlign = 'center';
-          ctx.fillText(mob.name, pos.x, pos.y - sh - 6);
-        }
-        
-        if (mob.chatBubble) {
-          this.drawChatBubble(ctx, pos.x, pos.y - sh - 15, mob.chatBubble);
-        }
-        
-        ctx.restore();
-        return;
-      }
-    }
-    
-    // Animación de Salto / Rebote clásica de Poring
-    let bounce = 0;
-    let squishX = 0;
-    let squishY = 0;
-    const cycle = (Date.now() / 300) + mob.id; // Desfasar cada monstruo
-
-    if (mob.state === 'dead') {
-      bounce = 0;
-    } else {
-      bounce = Math.max(0, Math.sin(cycle)) * 8 * scale;
-      squishX = Math.cos(cycle) * 1.5 * scale;
-      squishY = -Math.cos(cycle) * 1.5 * scale;
+    // HP Bar
+    if (mob.hp < mob.maxHp) {
+      const barW = 28 * this.camera.zoom;
+      const barH = 2.5 * this.camera.zoom;
+      const pct = mob.hp / mob.maxHp;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(pos.x - barW / 2, pos.y - 2, barW, barH);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(pos.x - barW / 2, pos.y - 2, barW * pct, barH);
     }
 
-    if (mob.mobId === 1001) {
-      // --- PORING (Burbuja Gelatinosa Rosa) ---
-      ctx.fillStyle = '#fda4af'; // Rosa Poring
-      ctx.beginPath();
-      // Dibujar como elipse distorsionada para dar sensación gelatinosa
-      ctx.ellipse(pos.x, pos.y - 8 * scale - bounce, (9 + squishX) * scale, (8 + squishY) * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#f43f5e';
-      ctx.lineWidth = 1 * scale;
-      ctx.stroke();
+    // Nombre
+    ctx.fillStyle = '#f87171';
+    ctx.font = `${Math.round(8.5 * this.camera.zoom)}px var(--font-body)`;
+    ctx.textAlign = 'center';
+    ctx.fillText(mob.name, pos.x, pos.y - 6);
 
-      // Ojitos
-      ctx.fillStyle = '#312e81';
-      ctx.beginPath();
-      ctx.arc(pos.x - 3 * scale, pos.y - 8 * scale - bounce, 0.8 * scale, 0, Math.PI * 2);
-      ctx.arc(pos.x + 3 * scale, pos.y - 8 * scale - bounce, 0.8 * scale, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Boca sonriente
-      ctx.strokeStyle = '#312e81';
-      ctx.lineWidth = 0.8 * scale;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y - 6 * scale - bounce, 1.5 * scale, 0.1, Math.PI - 0.1);
-      ctx.stroke();
-
-    } else if (mob.mobId === 1002) {
-      // --- LUNATIC (Conejo Blanco Saltador con Orejas Grandes) ---
-      // Cuerpo
-      ctx.fillStyle = '#f8fafc';
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - 8 * scale - bounce, (8 + squishX) * scale, (8 + squishY) * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 1 * scale;
-      ctx.stroke();
-
-      // Orejas grandes
-      ctx.fillStyle = '#cbd5e1';
-      ctx.beginPath();
-      ctx.ellipse(pos.x - 3 * scale, pos.y - 16 * scale - bounce, 2 * scale, 5 * scale, -0.2, 0, Math.PI * 2);
-      ctx.ellipse(pos.x + 3 * scale, pos.y - 16 * scale - bounce, 2 * scale, 5 * scale, 0.2, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Ojos de Lunatic (Rosa/Rojo suave)
-      ctx.fillStyle = '#f43f5e';
-      ctx.beginPath();
-      ctx.arc(pos.x - 2 * scale, pos.y - 8 * scale - bounce, 1.0 * scale, 0, Math.PI * 2);
-      ctx.arc(pos.x + 2 * scale, pos.y - 8 * scale - bounce, 1.0 * scale, 0, Math.PI * 2);
-      ctx.fill();
-
-    } else if (mob.mobId === 1003) {
-      // --- BAPHOMET JR (Pequeño Demonio Oscuro) ---
-      // Capa/Cuerpo oscuro
-      ctx.fillStyle = '#1e1b4b'; // Azul marino muy oscuro
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - 12 * scale - bounce, 8 * scale, 12 * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Cabeza
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y - 24 * scale - bounce, 6 * scale, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Cuernos rojos curvados premium
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 2 * scale;
-      ctx.beginPath();
-      ctx.arc(pos.x - 5 * scale, pos.y - 26 * scale - bounce, 4 * scale, Math.PI, Math.PI * 1.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(pos.x + 5 * scale, pos.y - 26 * scale - bounce, 4 * scale, Math.PI * 1.4, 0);
-      ctx.stroke();
-
-      // Ojos Brillantes de Baphomet (Cian/Neon)
-      ctx.fillStyle = '#06b6d4';
-      ctx.beginPath();
-      ctx.arc(pos.x - 2 * scale, pos.y - 24 * scale - bounce, 1 * scale, 0, Math.PI * 2);
-      ctx.arc(pos.x + 2 * scale, pos.y - 24 * scale - bounce, 1 * scale, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Nombre y vida flotante reducida
-    if (mob.state !== 'dead') {
-      // Barra de Vida
-      if (mob.hp < mob.maxHp) {
-        const barW = 28 * this.camera.zoom;
-        const barH = 2.5 * this.camera.zoom;
-        const pct = mob.hp / mob.maxHp;
-        
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(pos.x - barW / 2, pos.y - 35 * scale - bounce, barW, barH);
-        ctx.fillStyle = '#ef4444'; // Rojo vida monstruo
-        ctx.fillRect(pos.x - barW / 2, pos.y - 35 * scale - bounce, barW * pct, barH);
-      }
-
-      // Nombre
-      ctx.fillStyle = '#f87171';
-      ctx.font = `${Math.round(8.5 * this.camera.zoom)}px var(--font-body)`;
-      ctx.textAlign = 'center';
-      ctx.fillText(mob.name, pos.x, pos.y - 39 * scale - bounce);
-    }
-
-    // Burbuja de Chat flotante
+    // Burbuja de chat
     if (mob.chatBubble) {
-      this.drawChatBubble(ctx, pos.x, pos.y - 50 * scale - bounce, mob.chatBubble);
+      this.drawChatBubble(ctx, pos.x, pos.y - 15, mob.chatBubble);
     }
 
     ctx.restore();
   }
 
-  // --- Dibujar Burbuja de Habla ---
   drawChatBubble(ctx, x, y, text) {
     ctx.save();
     ctx.font = '9px var(--font-body)';
     const textWidth = ctx.measureText(text).width;
     const paddingX = 8;
-    const paddingY = 5;
     const w = textWidth + paddingX * 2;
     const h = 18;
 
-    // Caja de la burbuja
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
@@ -901,7 +671,6 @@ class Game {
     ctx.fill();
     ctx.stroke();
 
-    // Pequeño triángulo indicador apuntando abajo
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.beginPath();
     ctx.moveTo(x - 3, y);
@@ -910,7 +679,6 @@ class Game {
     ctx.closePath();
     ctx.fill();
 
-    // Texto
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -919,24 +687,15 @@ class Game {
     ctx.restore();
   }
 
-  // --- Dibujar Guías de Camino en el Suelo ---
-  drawPathGuide() {
-    if (!this.localPlayer || this.localPlayer.state !== 'moving') return;
-
-    // Si queremos dibujar el camino, podemos almacenar los puntos y dibujarlos
-    // Por simplicidad estética, dibujaremos una onda azul pequeña en el destino del click
-  }
-
-  // --- Dibujar Partículas y Efectos de Magia ---
+  // --- DIBUJAR EFECTOS / PARTÍCULAS EN 2D PROYECTADOS ---
   drawParticles() {
     this.particleEffects.forEach(eff => {
-      const pos = this.camera.tileToScreen(eff.x, eff.y);
-      const w = this.camera.tileWidth * this.camera.zoom;
+      const pos = this.camera.tileToScreen(eff.x, eff.y, 0.1);
+      const w = 64 * this.camera.zoom;
       
       this.ctx.save();
 
       if (eff.type === 'click_wave') {
-        // Onda de choque circular en el suelo
         const progress = 1.0 - eff.life / 0.4;
         this.ctx.strokeStyle = eff.color;
         this.ctx.lineWidth = 2 * (1.0 - progress);
@@ -945,10 +704,7 @@ class Game {
         this.ctx.stroke();
 
       } else if (eff.type === 'level_up') {
-        // Aura de luz ascendente icónica de level up
         const progress = 1.0 - eff.life / 1.5;
-        
-        // Dibujar pilar de luz dorado translúcido
         const grad = this.ctx.createLinearGradient(pos.x, pos.y, pos.x, pos.y - 120 * this.camera.zoom);
         grad.addColorStop(0, 'rgba(253, 224, 71, 0.6)');
         grad.addColorStop(0.5, 'rgba(253, 224, 71, 0.3)');
@@ -962,7 +718,6 @@ class Game {
         this.ctx.fillRect(pos.x - (w / 2) * (1 - progress), pos.y - 140 * this.camera.zoom * progress, w * (1 - progress), 140 * this.camera.zoom);
 
       } else if (eff.type === 'bash' || eff.type === 'double_strafe') {
-        // Impacto rojo/naranja
         const radius = (25 * (1.0 - eff.life)) * this.camera.zoom;
         this.ctx.fillStyle = eff.color;
         this.ctx.beginPath();
@@ -970,7 +725,6 @@ class Game {
         this.ctx.fill();
 
       } else if (eff.type === 'fire_bolt') {
-        // Lluvia de bolas de fuego cayendo del cielo
         const progress = 1.0 - eff.life;
         const fy = pos.y - 150 * this.camera.zoom * (1 - progress);
         this.ctx.fillStyle = '#ff4500';
@@ -978,7 +732,6 @@ class Game {
         this.ctx.arc(pos.x, fy, 8 * this.camera.zoom, 0, Math.PI * 2);
         this.ctx.fill();
         
-        // Destello en el suelo
         if (progress > 0.8) {
           this.ctx.fillStyle = 'rgba(255, 69, 0, 0.4)';
           this.ctx.beginPath();
@@ -986,37 +739,29 @@ class Game {
           this.ctx.fill();
         }
       } else if (eff.type === 'heal' || eff.type === 'heal_potion') {
-        // Cruz verde y pilares ascendentes de curación
         const progress = 1.0 - eff.life;
         this.ctx.fillStyle = 'rgba(92, 214, 92, 0.4)';
         this.ctx.beginPath();
         this.ctx.ellipse(pos.x, pos.y, w / 2 * progress, w / 4 * progress, 0, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Cruz verde flotando arriba
         this.ctx.fillStyle = eff.color;
         this.ctx.font = `bold ${Math.round(20 * this.camera.zoom)}px var(--font-body)`;
         this.ctx.textAlign = 'center';
         this.ctx.fillText("+", pos.x, pos.y - 20 * this.camera.zoom - 30 * this.camera.zoom * progress);
       } else if (eff.type === 'hit_spark') {
-        // Destello de golpe / chispazo clásico de RO
         const progress = 1.0 - eff.life / 0.25;
         this.ctx.strokeStyle = eff.color;
         this.ctx.lineWidth = 3 * (1.0 - progress) * this.camera.zoom;
-        
-        // Dibujar cruz de destello / chispas
         const length = 15 * progress * this.camera.zoom;
         
         this.ctx.beginPath();
-        // Línea diagonal 1
         this.ctx.moveTo(pos.x - length, pos.y - 12 * this.camera.zoom - length);
         this.ctx.lineTo(pos.x + length, pos.y - 12 * this.camera.zoom + length);
-        // Línea diagonal 2
         this.ctx.moveTo(pos.x - length, pos.y - 12 * this.camera.zoom + length);
         this.ctx.lineTo(pos.x + length, pos.y - 12 * this.camera.zoom - length);
         this.ctx.stroke();
 
-        // Destello circular central brillante
         this.ctx.fillStyle = '#fff';
         this.ctx.beginPath();
         this.ctx.arc(pos.x, pos.y - 12 * this.camera.zoom, 4 * (1.0 - progress) * this.camera.zoom, 0, Math.PI * 2);
@@ -1027,46 +772,46 @@ class Game {
     });
   }
 
-  // --- Dibujar Combat Text Flotante (Damage Pops) ---
+  // --- RENDERIZAR COMBAT DAMAGE TEXT FLOATING ---
   drawDamagePops() {
     this.damagePops.forEach(pop => {
-      const pos = this.camera.tileToScreen(pop.x, pop.y);
+      const pos = this.camera.tileToScreen(pop.x, pop.y, 1.3);
       this.ctx.save();
 
       this.ctx.textAlign = 'center';
       
-      let fill = '#fff'; // Daño estándar blanco
+      let fill = '#fff';
       let font = `${Math.round(15 * this.camera.zoom)}px var(--font-title)`;
       let text = pop.text;
 
       if (pop.isCrit) {
-        fill = '#facc15'; // Crítico dorado
+        fill = '#facc15';
         font = `bold ${Math.round(20 * this.camera.zoom)}px var(--font-title)`;
         text = `★ ${text} ★`;
       } else if (pop.isMiss) {
-        fill = '#94a3b8'; // Miss gris
+        fill = '#94a3b8';
         font = `bold ${Math.round(13 * this.camera.zoom)}px var(--font-body)`;
       } else if (pop.heal) {
-        fill = '#22c55e'; // Curación verde
+        fill = '#22c55e';
         font = `bold ${Math.round(16 * this.camera.zoom)}px var(--font-title)`;
         text = `+${text}`;
       }
 
-      // Sombra del texto
+      // Sombra
       this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
       this.ctx.font = font;
-      this.ctx.fillText(text, pos.x + 1, pos.y - 25 * this.camera.zoom + pop.y + 1);
+      this.ctx.fillText(text, pos.x + 1, pos.y + pop.y + 1);
 
-      // Texto de frente con alpha progresivo para fade out
+      // Frente
       this.ctx.fillStyle = fill;
-      this.ctx.globalAlpha = Math.min(1.0, pop.life * 2.0); // Desvanecer suavemente al final
-      this.ctx.fillText(text, pos.x, pos.y - 25 * this.camera.zoom + pop.y);
+      this.ctx.globalAlpha = Math.min(1.0, pop.life * 2.0);
+      this.ctx.fillText(text, pos.x, pos.y + pop.y);
 
       this.ctx.restore();
     });
   }
 
-  // --- Dibujar Objetivo Seleccionado (Aura Roja en el suelo) ---
+  // --- DIBUJAR AURA DE TARGET EN EL SUELO ---
   drawTargetIndicator() {
     if (!this.selectedTargetId) return;
 
@@ -1076,13 +821,12 @@ class Game {
       return;
     }
 
-    const pos = this.camera.tileToScreen(target.x, target.y);
-    const w = this.camera.tileWidth * this.camera.zoom;
-    const h = this.camera.tileHeight * this.camera.zoom * this.camera.pitch * 2;
+    const pos = this.camera.tileToScreen(target.x, target.y, 0.02);
+    const w = 64 * this.camera.zoom;
+    const h = 32 * this.camera.zoom;
 
     this.ctx.save();
     
-    // Círculo rojo intermitente bajo el monstruo
     const alpha = 0.35 + Math.sin(Date.now() / 150) * 0.15;
     this.ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
     this.ctx.lineWidth = 2 * this.camera.zoom;
@@ -1094,7 +838,6 @@ class Game {
     this.ctx.restore();
   }
 
-  // Helper de colores de pelo
   getHairColorHex(idx) {
     const colors = ['#ffd480', '#ff8080', '#80c4ff', '#c480ff', '#80ff80'];
     return colors[idx] || '#ffd480';

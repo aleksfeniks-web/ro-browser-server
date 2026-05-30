@@ -139,6 +139,10 @@ class Network {
       }
 
       case 'despawn_entity': {
+        const ent = this.game.entities[packet.id];
+        if (ent && this.game.removeEntity3D) {
+          this.game.removeEntity3D(ent);
+        }
         delete this.game.entities[packet.id];
         // Quitar objetivo si es que era nuestro blanco
         if (this.game.selectedTargetId === packet.id) {
@@ -342,7 +346,10 @@ class Network {
           loadStatus.textContent = 'Teletransportando...';
         }
 
-        // Limpiar todas las entidades del mapa anterior
+        // Limpiar todas las entidades del mapa anterior en 3D y memoria
+        if (this.game.clearAllEntities3D) {
+          this.game.clearAllEntities3D();
+        }
         this.game.entities = {};
         this.game.selectedTargetId = null;
         this.game.damagePops = [];

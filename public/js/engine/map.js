@@ -1,6 +1,7 @@
 /**
- * WebRO - Isometric Map & Object Renderer
- * Draws the ground, obstacles, water animations, portals and depth-sorted objects.
+ * WebRO - Three.js WebGL 3D Map Engine
+ * Compiles grid cells into a structured 3D landscape, handles transparent animated water,
+ * generates 3D obstacles (trees, pillars, city fountain), and manages warp portals.
  */
 class GameMap {
   constructor() {
@@ -11,16 +12,47 @@ class GameMap {
     this.grid = [];
     this.warps = [];
     
-    this.waterFrame = 0;
-    this.waterTime = 0;
+    // Referencias a la escena de Three.js
+    this.scene = null;
+    this.mapGroup = null;
+    this.waterMeshes = [];
+    this.portalMeshes = [];
+    this.fountainParticles = [];
+    this.fountainParticlesGroup = null;
 
-    // Texturas de suelo cargadas dinámicamente del data.grf original
+    // Texturas de suelo de la grilla (Imagen estándar para fallback)
     this.textures = {
       grass: new Image(),
       stone: new Image()
     };
     
+    // Texturas de Three.js
+    this.threeTextures = {
+      grass: null,
+      stone: null
+    };
+
+    this.setupTextureListeners();
     this.loadGroundTextures();
+  }
+
+  setupTextureListeners() {
+    // Cuando la imagen termine de cargarse, crear la textura de Three.js
+    this.textures.grass.onload = () => {
+      this.threeTextures.grass = new THREE.Texture(this.textures.grass);
+      this.threeTextures.grass.wrapS = THREE.RepeatWrapping;
+      this.threeTextures.grass.wrapT = THREE.RepeatWrapping;
+      this.threeTextures.grass.needsUpdate = true;
+      this.rebuildTerrain();
+    };
+
+    this.textures.stone.onload = () => {
+      this.threeTextures.stone = new THREE.Texture(this.textures.stone);
+      this.threeTextures.stone.wrapS = THREE.RepeatWrapping;
+      this.threeTextures.stone.wrapT = THREE.RepeatWrapping;
+      this.threeTextures.stone.needsUpdate = true;
+      this.rebuildTerrain();
+    };
   }
 
   async loadGroundTextures() {
@@ -30,19 +62,16 @@ class GameMap {
     // 1. Intentar cargar desde el CDN en la nube si está configurado
     if (window.WebROConfig && window.WebROConfig.cdnUrl) {
       try {
-        const grassUrl = `${window.WebROConfig.cdnUrl}${grassPath}`;
-        const stoneUrl = `${window.WebROConfig.cdnUrl}${stonePath}`;
-        
-        this.textures.grass.src = grassUrl;
-        this.textures.stone.src = stoneUrl;
-        console.log('✅ [Map] Texturas cargándose desde el CDN en la nube.');
+        this.textures.grass.src = `${window.WebROConfig.cdnUrl}${grassPath}`;
+        this.textures.stone.src = `${window.WebROConfig.cdnUrl}${stonePath}`;
+        console.log('✅ [Map3D] Cargando texturas desde el CDN en la nube.');
         return;
       } catch (err) {
-        console.warn('[Map] Falló la carga de texturas desde el CDN, intentando local:', err);
+        console.warn('[Map3D] Falló la carga desde el CDN:', err);
       }
     }
 
-    // 2. Intentar cargar desde el LocalGRF del navegador (IndexedDB - ideal para Render.com)
+    // 2. Intentar cargar desde el LocalGRF (IndexedDB)
     if (window.localGRF && window.localGRF.isLoaded) {
       try {
         const grassBytes = await window.localGRF.readBytes(grassPath);
@@ -50,16 +79,278 @@ class GameMap {
 
         this.textures.grass.src = URL.createObjectURL(new Blob([grassBytes], { type: 'image/bmp' }));
         this.textures.stone.src = URL.createObjectURL(new Blob([stoneBytes], { type: 'image/bmp' }));
-        console.log('✅ [Map] Texturas cargadas localmente desde data.grf.');
+        console.log('✅ [Map3D] Texturas cargadas con éxito desde data.grf local.');
         return;
       } catch (err) {
-        console.warn('[Map] No se pudieron cargar texturas localmente, intentando API:', err);
+        console.warn('[Map3D] No se pudieron cargar texturas localmente:', err);
       }
     }
 
-    // 3. Intentar cargar desde la API del servidor (Localhost / Fallback)
+    // 3. Cargar desde la API del servidor (Localhost / Fallback)
     this.textures.grass.src = `/api/grf/file?path=${encodeURIComponent(grassPath)}`;
     this.textures.stone.src = `/api/grf/file?path=${encodeURIComponent(stonePath)}`;
+  }
+
+  // Inicializar escena 3D y compilar elementos del mapa
+  init3DScene(threeScene) {
+    this.cleanup(); // Asegurar limpiar el mapa anterior
+
+    this.scene = threeScene;
+    this.mapGroup = new THREE.Group();
+    this.scene.add(this.mapGroup);
+
+    this.buildTerrain();
+    this.buildObstacles();
+    this.buildPortals();
+  }
+
+  // Compilar grilla de terreno
+  buildTerrain() {
+    if (!this.mapGroup || this.grid.length === 0) return;
+
+    // Crear geometrías reutilizables para optimizar rendimiento
+    const tileGeo = new THREE.BoxGeometry(1.0, 0.2, 1.0); // Baldosas 3D de terreno
+    
+    // Crear materiales estándar premium
+    const grassMat = new THREE.MeshStandardMaterial({
+      map: this.threeTextures.grass,
+      color: this.threeTextures.grass ? 0xffffff : 0x1e3f20, // Color si no hay textura
+      roughness: 0.8,
+      bumpScale: 0.05
+    });
+
+    const stoneMat = new THREE.MeshStandardMaterial({
+      map: this.threeTextures.stone,
+      color: this.threeTextures.stone ? 0xffffff : 0x556370,
+      roughness: 0.6
+    });
+
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b, // Gris pizarra oscuro para base de muros
+      roughness: 0.9
+    });
+
+    // Mapear celdas en bucle
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const type = this.grid[y][x];
+        
+        if (type === '*') {
+          // --- BALDOSA DE AGUA ANIMADA ---
+          const waterGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
+          const waterMat = new THREE.MeshStandardMaterial({
+            color: 0x0891b2, // Azul cian premium
+            transparent: true,
+            opacity: 0.75,
+            roughness: 0.1,
+            metalness: 0.1
+          });
+          const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+          waterMesh.position.set(x, -0.05, y); // Ligeramente por debajo del suelo
+          this.mapGroup.add(waterMesh);
+          this.waterMeshes.push(waterMesh);
+          continue;
+        }
+
+        let mat = grassMat;
+        if (type === '+') mat = stoneMat;
+        else if (type === '#') mat = wallMat;
+
+        const mesh = new THREE.Mesh(tileGeo, mat);
+        mesh.position.set(x, -0.1, y); // Baldosa en altura central y=0
+        mesh.receiveShadow = true;
+        this.mapGroup.add(mesh);
+      }
+    }
+  }
+
+  // Re-compilar terreno cuando se cargan las texturas originales
+  rebuildTerrain() {
+    if (!this.mapGroup) return;
+    
+    // Limpiar baldosas antiguas (manteniendo agua y obstáculos)
+    const toRemove = [];
+    this.mapGroup.children.forEach(child => {
+      if (child.geometry && child.geometry.type === 'BoxGeometry' && child.position.y === -0.1) {
+        toRemove.push(child);
+      }
+    });
+
+    toRemove.forEach(mesh => {
+      this.mapGroup.remove(mesh);
+      mesh.geometry.dispose();
+    });
+
+    this.buildTerrain();
+  }
+
+  // Construir elementos 3D del mapa (Árboles, Columnas, Fuentes)
+  buildObstacles() {
+    if (!this.mapGroup || this.grid.length === 0) return;
+
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const type = this.grid[y][x];
+
+        if (type === 'T') {
+          // --- ÁRBOL DE PINO EN 3D ---
+          const treeGroup = new THREE.Group();
+          treeGroup.position.set(x, 0, y);
+
+          // Tronco (Cilindro marrón)
+          const trunkGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.6, 6);
+          const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c2e0b, roughness: 0.9 });
+          const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+          trunk.position.y = 0.3;
+          treeGroup.add(trunk);
+
+          // Follaje (Stack de conos verdes de abajo a arriba)
+          const leafMat1 = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.8 });
+          const leafMat2 = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+          const leafMat3 = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.8 });
+
+          const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.5, 6), leafMat1);
+          c1.position.y = 0.7;
+          treeGroup.add(c1);
+
+          const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.4, 6), leafMat2);
+          c2.position.y = 1.0;
+          treeGroup.add(c2);
+
+          const c3 = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 6), leafMat3);
+          c3.position.y = 1.25;
+          treeGroup.add(c3);
+
+          this.mapGroup.add(treeGroup);
+
+        } else if (type === '#') {
+          // --- PILAR / MURO DE PIEDRA 3D ---
+          const pilarGeo = new THREE.BoxGeometry(0.9, 2.0, 0.9);
+          const pilarMat = new THREE.MeshStandardMaterial({
+            map: this.threeTextures.stone,
+            color: this.threeTextures.stone ? 0xffffff : 0x334155,
+            roughness: 0.7
+          });
+          const pilar = new THREE.Mesh(pilarGeo, pilarMat);
+          pilar.position.set(x, 1.0, y); // Apoyado sobre el suelo y=0
+          pilar.castShadow = true;
+          pilar.receiveShadow = true;
+          this.mapGroup.add(pilar);
+
+        } else if (type === 'F') {
+          // --- FUENTE CENTRAL DE PRONTERA 3D ---
+          const fountainGroup = new THREE.Group();
+          fountainGroup.position.set(x, 0, y);
+
+          // Base circular de la fuente
+          const baseGeo = new THREE.CylinderGeometry(1.6, 1.7, 0.5, 12);
+          const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6 });
+          const base = new THREE.Mesh(baseGeo, stoneMat);
+          base.position.y = 0.25;
+          fountainGroup.add(base);
+
+          // Plato de agua interior (Ligeramente elevado)
+          const waterBaseGeo = new THREE.CylinderGeometry(1.4, 1.4, 0.1, 12);
+          const waterMat = new THREE.MeshStandardMaterial({
+            color: 0x06b6d4,
+            transparent: true,
+            opacity: 0.8,
+            roughness: 0.1
+          });
+          const water = new THREE.Mesh(waterBaseGeo, waterMat);
+          water.position.y = 0.46;
+          fountainGroup.add(water);
+
+          // Columna central de la fuente
+          const centerGeo = new THREE.CylinderGeometry(0.2, 0.3, 0.8, 8);
+          const center = new THREE.Mesh(centerGeo, stoneMat);
+          center.position.y = 0.9;
+          fountainGroup.add(center);
+
+          // Segundo plato pequeño arriba
+          const topBowlGeo = new THREE.CylinderGeometry(0.6, 0.4, 0.15, 8);
+          const topBowl = new THREE.Mesh(topBowlGeo, stoneMat);
+          topBowl.position.y = 1.3;
+          fountainGroup.add(topBowl);
+
+          this.mapGroup.add(fountainGroup);
+
+          // --- SISTEMA DE PARTÍCULAS / CHORROS DE AGUA ---
+          this.fountainParticlesGroup = new THREE.Group();
+          this.fountainParticlesGroup.position.set(x, 0.5, y);
+          this.mapGroup.add(this.fountainParticlesGroup);
+
+          const particlesCount = 20;
+          const pGeo = new THREE.SphereGeometry(0.02, 3, 3);
+          const pMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+
+          for (let i = 0; i < particlesCount; i++) {
+            const pMesh = new THREE.Mesh(pGeo, pMat);
+            
+            // Ángulo y velocidad aleatoria para el chorro de agua
+            const angle = (Math.PI * 2) * (i / particlesCount);
+            pMesh.userData = {
+              angle: angle,
+              radius: 0.2 + Math.random() * 1.0,
+              baseY: 0.8 + Math.random() * 0.2,
+              speed: 1.0 + Math.random() * 1.5,
+              time: Math.random() * Math.PI
+            };
+
+            this.fountainParticlesGroup.add(pMesh);
+            this.fountainParticles.push(pMesh);
+          }
+        }
+      }
+    }
+  }
+
+  // Crear portales brillantes (Warps) del mapa
+  buildPortals() {
+    if (!this.mapGroup || this.warps.length === 0) return;
+
+    this.warps.forEach(warp => {
+      // Dibujar en el centro del portal
+      const centerX = warp.x + warp.width / 2 - 0.5;
+      const centerY = warp.y + warp.height / 2 - 0.5;
+
+      const portalGroup = new THREE.Group();
+      portalGroup.position.set(centerX, 0, centerY);
+
+      // Cilindro translúcido brillante de RO
+      const geo = new THREE.CylinderGeometry(warp.width / 2, warp.width / 2, 2.0, 16, 1, true);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x06b6d4, // Cyan
+        transparent: true,
+        opacity: 0.25,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const cyl = new THREE.Mesh(geo, mat);
+      cyl.position.y = 1.0;
+      portalGroup.add(cyl);
+
+      // Anillo base brillante
+      const ringGeo = new THREE.RingGeometry(warp.width / 2.3, warp.width / 2, 16);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x22d3ee,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2; // Acostar en el suelo
+      ring.position.y = 0.02;
+      portalGroup.add(ring);
+
+      this.mapGroup.add(portalGroup);
+      this.portalMeshes.push({
+        group: portalGroup,
+        cylinder: cyl,
+        ring: ring,
+        pulseSpeed: 1.5 + Math.random() * 0.5
+      });
+    });
   }
 
   setMapData(data) {
@@ -69,319 +360,84 @@ class GameMap {
     this.height = data.height;
     this.grid = data.grid;
     this.warps = data.warps || [];
+
+    // Re-iniciar gráficos 3D si la escena ya está cargada
+    if (this.scene) {
+      this.init3DScene(this.scene);
+    }
   }
 
   update(deltaTime) {
-    // Actualizar animación del agua
-    this.waterTime += deltaTime;
-    if (this.waterTime > 200) {
-      this.waterFrame = (this.waterFrame + 1) % 4;
-      this.waterTime = 0;
-    }
-  }
+    const timeSec = Date.now() * 0.001;
 
-  // Dibujar el suelo (se dibuja primero para todo el mapa visible)
-  drawGround(ctx, camera) {
-    if (this.grid.length === 0) return;
+    // 1. Animación suave del Agua (Efecto ondulatorio sinusoidal vertical en 3D)
+    this.waterMeshes.forEach((mesh, idx) => {
+      const x = mesh.position.x;
+      const z = mesh.position.z;
+      const wave = Math.sin(timeSec * 2.5 + x * 0.3 + z * 0.3) * 0.02;
+      mesh.position.y = -0.05 + wave;
+    });
 
-    // Obtener celdas visibles para optimizar (culling básico)
-    // Para simplificar, recorremos la grilla entera de este mapa pequeño
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const tileType = this.grid[y][x];
-        const screenPos = camera.tileToScreen(x, y);
+    // 2. Animación de Partículas de la Fuente Central (Splashing)
+    this.fountainParticles.forEach(p => {
+      const ud = p.userData;
+      ud.time += deltaTime * 0.003 * ud.speed;
+      if (ud.time > Math.PI) ud.time = 0; // Reiniciar arco
 
-        // Optimización rápida (culling): Dibujar solo si está dentro de la pantalla
-        if (screenPos.x < -100 || screenPos.x > camera.screenWidth + 100 ||
-            screenPos.y < -100 || screenPos.y > camera.screenHeight + 100) {
-          continue;
-        }
+      // Arco parabólico: saltar del centro hacia afuera
+      const factor = Math.sin(ud.time);
+      const currentRadius = ud.radius * (ud.time / Math.PI);
+      
+      const px = Math.cos(ud.angle) * currentRadius;
+      const py = ud.baseY * factor;
+      const pz = Math.sin(ud.angle) * currentRadius;
 
-        this.drawFloorTile(ctx, screenPos, tileType, camera);
-      }
-    }
+      p.position.set(px, py, pz);
+    });
 
-    // Dibujar portales (Warps)
-    this.warps.forEach(warp => {
-      // Dibujar en cada celda del portal
-      for (let wx = warp.x; wx < warp.x + warp.width; wx++) {
-        for (let wy = warp.y; wy < warp.y + warp.height; wy++) {
-          const screenPos = camera.tileToScreen(wx, wy);
-          this.drawPortalGlow(ctx, screenPos, camera);
-        }
-      }
+    // 3. Animación de Portales (Pulsación de escala y opacidad)
+    this.portalMeshes.forEach(p => {
+      const pulse = Math.sin(timeSec * p.pulseSpeed) * 0.15 + 0.85;
+      
+      // Escalar horizontalmente
+      p.cylinder.scale.set(pulse, 1.0, pulse);
+      p.cylinder.material.opacity = 0.15 + (Math.cos(timeSec * p.pulseSpeed) * 0.1);
+      
+      // Anillo en el piso pulsando
+      p.ring.scale.set(pulse * 1.05, pulse * 1.05, 1.0);
+      p.ring.material.opacity = 0.35 + (Math.sin(timeSec * p.pulseSpeed) * 0.15);
     });
   }
 
-  // Dibujar una baldosa de piso procedimentalmente con detalles premium o textura de data.grf
-  drawFloorTile(ctx, pos, type, camera) {
-    const w = camera.tileWidth * camera.zoom;
-    const h = camera.tileHeight * camera.zoom * camera.pitch * 2;
+  // --- SIGNATURAS COMPATIBLES VACÍAS ---
+  // Evitan errores de compilación con la lógica 2D antigua del cliente
+  drawGround(ctx, camera) {}
+  getObstacles(camera) { return []; }
+  drawObstacle(ctx, obs, camera) {}
 
-    // Si las texturas del GRF están completamente cargadas, dibujarlas
-    if (type === '.' && this.textures.grass.complete && this.textures.grass.naturalWidth > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y - h / 2);
-      ctx.lineTo(pos.x + w / 2, pos.y);
-      ctx.lineTo(pos.x, pos.y + h / 2);
-      ctx.lineTo(pos.x - w / 2, pos.y);
-      ctx.closePath();
-      ctx.clip();
-      ctx.drawImage(this.textures.grass, pos.x - w / 2, pos.y - h / 2, w, h);
-      ctx.restore();
-      return;
-    } else if (type === '+' && this.textures.stone.complete && this.textures.stone.naturalWidth > 0) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y - h / 2);
-      ctx.lineTo(pos.x + w / 2, pos.y);
-      ctx.lineTo(pos.x, pos.y + h / 2);
-      ctx.lineTo(pos.x - w / 2, pos.y);
-      ctx.closePath();
-      ctx.clip();
-      ctx.drawImage(this.textures.stone, pos.x - w / 2, pos.y - h / 2, w, h);
-      ctx.restore();
-      return;
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y - h / 2);
-    ctx.lineTo(pos.x + w / 2, pos.y);
-    ctx.lineTo(pos.x, pos.y + h / 2);
-    ctx.lineTo(pos.x - w / 2, pos.y);
-    ctx.closePath();
-
-    // Colores según tipo de terreno
-    let fill = '#16a34a'; // Verde Césped por defecto
-    let stroke = 'rgba(22, 163, 74, 0.2)';
-
-    switch (type) {
-      case '.': // Césped común
-        fill = '#1b4332'; // Verde boscoso oscuro
-        stroke = 'rgba(45, 106, 79, 0.15)';
-        break;
-      case '+': // Camino de Tierra / Piedra
-        fill = '#475569'; // Pizarra/Gris camino
-        stroke = 'rgba(100, 116, 139, 0.2)';
-        break;
-      case '*': // Agua animada
-        const waterCycle = Math.sin((Date.now() / 600) + pos.x * 0.2 + pos.y * 0.2) * 8;
-        fill = `hsl(${200 + waterCycle}, 75%, 35%)`;
-        stroke = 'rgba(14, 116, 144, 0.2)';
-        break;
-      case '#': // Base de Muros
-        fill = '#0f172a';
-        stroke = '#1e293b';
-        break;
-      case 'T': // Base de Árboles
-        fill = '#0f241a';
-        stroke = 'rgba(25, 50, 30, 0.2)';
-        break;
-      case 'F': // Fuente
-        fill = '#334155';
-        stroke = '#475569';
-        break;
-    }
-
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Detalles adicionales (textura suave de césped o brillo de agua)
-    if (type === '.' && camera.zoom > 0.8) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
-      ctx.fillRect(pos.x - 2, pos.y - 2, 4, 4);
-    } else if (type === '*') {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y, w / 4, h / 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  // Dibujar efecto de portal flotante clásico de RO (Warp Portal)
-  drawPortalGlow(ctx, pos, camera) {
-    const w = camera.tileWidth * camera.zoom;
-    const h = camera.tileHeight * camera.zoom * camera.pitch * 2;
-
-    ctx.save();
-    // Aura azul cian transparente con pulsaciones
-    const pulse = Math.sin(Date.now() / 250) * 0.15 + 0.85;
-    const grad = ctx.createRadialGradient(pos.x, pos.y, 2, pos.x, pos.y, w / 2 * pulse);
-    grad.addColorStop(0, 'rgba(6, 182, 212, 0.55)');
-    grad.addColorStop(0.5, 'rgba(6, 182, 212, 0.25)');
-    grad.addColorStop(1, 'rgba(6, 182, 212, 0)');
-
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y, w / 2, h / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Círculos concéntricos ascendentes (efecto 3D simple del portal)
-    ctx.strokeStyle = `rgba(34, 211, 238, ${0.4 * pulse})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y - 4, w / 2.3, h / 2.3, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y - 12, w / 2.8, h / 2.8, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    ctx.restore();
-  }
-
-  // Recolectar obstáculos verticales del mapa que necesitan ordenamiento por profundidad
-  getObstacles(camera) {
-    const obstacles = [];
-    if (this.grid.length === 0) return obstacles;
-
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const type = this.grid[y][x];
-        if (type === 'T' || type === '#' || type === 'F') {
-          obstacles.push({
-            type: 'obstacle',
-            subType: type,
-            x: x,
-            y: y,
-            depth: x + y + 0.5 // Profundidad ligeramente adelantada
-          });
+  // Liberar recursos 3D de la memoria para evitar leaks al teleportarse
+  cleanup() {
+    if (this.mapGroup && this.scene) {
+      this.scene.remove(this.mapGroup);
+      
+      this.mapGroup.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.dispose());
+          } else {
+            child.material.dispose();
+          }
         }
-      }
-    }
-    return obstacles;
-  }
-
-  // Dibujar obstáculos verticales en 3D
-  drawObstacle(ctx, obs, camera) {
-    const pos = camera.tileToScreen(obs.x, obs.y);
-    const w = camera.tileWidth * camera.zoom;
-    const h = camera.tileHeight * camera.zoom * camera.pitch * 2;
-
-    ctx.save();
-
-    // Sombra del obstáculo en el suelo
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y, w / 2.5, h / 2.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (obs.subType === 'T') {
-      // --- Árbol de Pino 2.5D en Pixel Art procedimental ---
-      const treeHeight = 120 * camera.zoom;
-      
-      // Tronco
-      ctx.fillStyle = '#78350f'; // Café oscuro
-      ctx.fillRect(pos.x - 3 * camera.zoom, pos.y - treeHeight * 0.15, 6 * camera.zoom, treeHeight * 0.15);
-
-      // Follaje (Conos Verdes)
-      const layers = [
-        { bottom: 0.15, top: 0.55, w: 0.35, color: '#14532d' },
-        { bottom: 0.40, top: 0.80, w: 0.28, color: '#15803d' },
-        { bottom: 0.65, top: 1.00, w: 0.18, color: '#22c55e' }
-      ];
-
-      layers.forEach(layer => {
-        ctx.fillStyle = layer.color;
-        ctx.beginPath();
-        ctx.moveTo(pos.x - w * layer.w, pos.y - treeHeight * layer.bottom);
-        ctx.lineTo(pos.x + w * layer.w, pos.y - treeHeight * layer.bottom);
-        ctx.lineTo(pos.x, pos.y - treeHeight * layer.top);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Bordes para darle volumen
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-        ctx.stroke();
       });
-
-    } else if (obs.subType === '#') {
-      // --- Muro de Piedra / Pilar de Prontera ---
-      const wallHeight = 50 * camera.zoom;
       
-      // Cara Izquierda (Sombra)
-      ctx.fillStyle = '#1e293b';
-      ctx.beginPath();
-      ctx.moveTo(pos.x - w / 2, pos.y);
-      ctx.lineTo(pos.x, pos.y + h / 2);
-      ctx.lineTo(pos.x, pos.y + h / 2 - wallHeight);
-      ctx.lineTo(pos.x - w / 2, pos.y - wallHeight);
-      ctx.closePath();
-      ctx.fill();
-
-      // Cara Derecha (Brillo)
-      ctx.fillStyle = '#334155';
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y + h / 2);
-      ctx.lineTo(pos.x + w / 2, pos.y);
-      ctx.lineTo(pos.x + w / 2, pos.y - wallHeight);
-      ctx.lineTo(pos.x, pos.y + h / 2 - wallHeight);
-      ctx.closePath();
-      ctx.fill();
-
-      // Tapa Superior
-      ctx.fillStyle = '#475569';
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y - wallHeight - h / 2);
-      ctx.lineTo(pos.x + w / 2, pos.y - wallHeight);
-      ctx.lineTo(pos.x, pos.y - wallHeight + h / 2);
-      ctx.lineTo(pos.x - w / 2, pos.y - wallHeight);
-      ctx.closePath();
-      ctx.fill();
-
-      // Detalles del pilar
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-      ctx.stroke();
-
-    } else if (obs.subType === 'F') {
-      // --- Fuente Central de Prontera ---
-      const fountainHeight = 35 * camera.zoom;
-
-      // Base cilíndrica de piedra
-      ctx.fillStyle = '#475569';
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y, w / 2, h / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(pos.x - w / 2, pos.y - fountainHeight, w, fountainHeight);
-      
-      ctx.fillStyle = '#64748b';
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - fountainHeight, w / 2, h / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Agua en la fuente con ondas concéntricas
-      ctx.fillStyle = 'rgba(6, 182, 212, 0.6)';
-      ctx.beginPath();
-      ctx.ellipse(pos.x, pos.y - fountainHeight, w / 2.3, h / 2.3, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Efecto de partículas de agua saltando
-      const particles = 8;
-      const angleStep = (Math.PI * 2) / particles;
-      const time = Date.now() / 400;
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      for (let i = 0; i < particles; i++) {
-        const angle = i * angleStep + time;
-        const px = pos.x + Math.cos(angle) * (w / 3.5);
-        const py = pos.y - fountainHeight + Math.sin(angle) * (h / 3.5) - Math.abs(Math.sin(time * 2 + i)) * 12 * camera.zoom;
-
-        ctx.beginPath();
-        ctx.arc(px, py, 2 * camera.zoom, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      this.mapGroup = null;
     }
 
-    ctx.restore();
+    this.waterMeshes = [];
+    this.portalMeshes = [];
+    this.fountainParticles = [];
+    this.fountainParticlesGroup = null;
   }
 }
 
