@@ -1,8 +1,50 @@
 /**
  * WebRO - Client-side Local GRF Reader using IndexedDB
- * Enables playing with original assets on cloud deployments (Render.com)
+ * Enables playing with original assets on cloud deployments
  * by storing the data.grf File object in IndexedDB and parsing it locally.
+ * Supports dual Hangeul/EUC-KR and Windows-1252 file path indexing for full compatibility.
  */
+
+// Mapa de traducción bidireccional para carpetas y términos coreanos en Ragnarok Online
+const KOREAN_TRANSLATION_MAP = {
+  '¸ó½ºÅÍ': '몬스터',
+  'ÀÎ°£Á·': '인간족',
+  '¸öÅë': '몸통',
+  '³²': '남',
+  '¿©': '여',
+  'ÃÊº¸ÀÚ_³²': '초보자_남',
+  'ÃÊº¸ÀÚ_¿©': '초보자_여',
+  '¸Ó¸®Åë': '머리통'
+};
+
+function getAlternativePaths(path) {
+  const alts = [];
+  
+  // 1. Traducir de windows-1252 a Hangeul (Coreano)
+  let alt1 = path;
+  let hasRep1 = false;
+  for (const [key, val] of Object.entries(KOREAN_TRANSLATION_MAP)) {
+    if (alt1.includes(key)) {
+      alt1 = alt1.replaceAll(key, val);
+      hasRep1 = true;
+    }
+  }
+  if (hasRep1) alts.push(alt1);
+
+  // 2. Traducir de Hangeul a windows-1252
+  let alt2 = path;
+  let hasRep2 = false;
+  for (const [key, val] of Object.entries(KOREAN_TRANSLATION_MAP)) {
+    if (alt2.includes(val)) {
+      alt2 = alt2.replaceAll(val, key);
+      hasRep2 = true;
+    }
+  }
+  if (hasRep2) alts.push(alt2);
+
+  return alts;
+}
+
 class LocalGRF {
   constructor() {
     this.dbName = 'WebRO_GRF_DB';
@@ -22,7 +64,6 @@ class LocalGRF {
       console.log(`📦 [LocalGRF] Detectado data.grf local guardado en IndexedDB.`);
       this.isSaved = true;
       
-      // Iniciar el pesado parseo en segundo plano sin bloquear el hilo principal del Launcher
       this.parsePromise = this.parseGRF().then(() => {
         this.isLoaded = true;
       }).catch(err => {
@@ -109,7 +150,6 @@ class LocalGRF {
           const buffer = e.target.result;
           const view = new DataView(buffer);
 
-          // Firma
           let magic = '';
           for (let i = 0; i < 15; i++) {
             const char = view.getUint8(i);
@@ -120,12 +160,10 @@ class LocalGRF {
             return reject(new Error('Firma de GRF local inválida.'));
           }
 
-          // Offsets con getUint32 (sin signo para > 2GB)
           const fileTableOffset = view.getUint32(30, true);
           const seed = view.getUint32(34, true);
           const filesCount = view.getUint32(38, true) - seed - 7;
 
-          // Leer la tabla comprimida
           const headReader = new FileReader();
           const tableHeadBlob = this.file.slice(fileTableOffset + 46, fileTableOffset + 46 + 8);
           
@@ -133,7 +171,6 @@ class LocalGRF {
             try {
               const headView = new DataView(evt.target.result);
               const compressedSize = headView.getUint32(0, true);
-              const uncompressedSize = headView.getUint32(4, true);
 
               const dataReader = new FileReader();
               const tableDataBlob = this.file.slice(fileTableOffset + 46 + 8, fileTableOffset + 46 + 8 + compressedSize);
@@ -142,43 +179,58 @@ class LocalGRF {
                 try {
                   const compressedBytes = new Uint8Array(ev.target.result);
                   const unpacked = pako.inflate(compressedBytes);
-                  // Usar byteOffset y byteLength de forma segura por si pako usa un pool de buffers
                   const viewUnpacked = new DataView(unpacked.buffer, unpacked.byteOffset, unpacked.byteLength);
 
                   let offset = 0;
                   this.index.clear();
-                  const decoder = new TextDecoder('windows-1252');
+                  
+                  // Decodificadores duales: Windows-1252 y EUC-KR (Coreano)
+                  const decoder1252 = new TextDecoder('windows-1252');
+                  const decoderEUCKR = new TextDecoder('euc-kr');
 
                   for (let i = 0; i < filesCount; i++) {
                     if (offset >= unpacked.length) break;
 
-                    // Decodificación ultra-rápida nativa usando subarray e indexOf
                     const nextNull = unpacked.indexOf(0, offset);
                     if (nextNull === -1 || nextNull >= unpacked.length) break;
 
-                    const filePath = decoder.decode(unpacked.subarray(offset, nextNull));
+                    const rawBytes = unpacked.subarray(offset, nextNull);
                     offset = nextNull + 1; // saltar null
 
                     if (offset + 17 > unpacked.length) break;
 
                     const cLen = viewUnpacked.getUint32(offset, true);
                     const uLen = viewUnpacked.getUint32(offset + 4, true);
-                    const uLenAligned = viewUnpacked.getUint32(offset + 8, true);
                     const flag = unpacked[offset + 12];
                     const fileOffset = viewUnpacked.getUint32(offset + 13, true);
                     offset += 17;
 
-                    const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
-                    this.index.set(cleanPath, {
+                    const entry = {
                       offset: fileOffset,
                       compressedSize: cLen,
                       uncompressedSize: uLen,
                       flag: flag
-                    });
+                    };
+
+                    // 1. Indexar en windows-1252 (Rutas por defecto del cliente)
+                    const filePath1252 = decoder1252.decode(rawBytes);
+                    const cleanPath1252 = filePath1252.toLowerCase().replace(/\\/g, '/');
+                    this.index.set(cleanPath1252, entry);
+
+                    // 2. Indexar en EUC-KR (Rutas en coreano original si difieren)
+                    try {
+                      const filePathEUCKR = decoderEUCKR.decode(rawBytes);
+                      const cleanPathEUCKR = filePathEUCKR.toLowerCase().replace(/\\/g, '/');
+                      if (cleanPathEUCKR !== cleanPath1252) {
+                        this.index.set(cleanPathEUCKR, entry);
+                      }
+                    } catch (e) {
+                      // Ignorar errores individuales si no contiene caracteres coreanos decodificables
+                    }
                   }
 
                   this.isLoaded = true;
-                  console.log(`✅ [LocalGRF] Parseado con éxito. ${this.index.size} archivos indexados en navegador.`);
+                  console.log(`✅ [LocalGRF] Parseado con éxito. ${this.index.size} rutas indexadas dualmente en navegador.`);
                   resolve();
                 } catch (err) { reject(err); }
               };
@@ -197,7 +249,20 @@ class LocalGRF {
       if (!this.file || !this.isLoaded) return reject(new Error('GRF local no inicializado.'));
 
       const cleanPath = path.toLowerCase().replace(/\\/g, '/');
-      const entry = this.index.get(cleanPath);
+      let entry = this.index.get(cleanPath);
+
+      // Si no se encuentra en el primer intento, probar rutas alternativas
+      if (!entry) {
+        const alts = getAlternativePaths(cleanPath);
+        for (const alt of alts) {
+          entry = this.index.get(alt);
+          if (entry) {
+            console.log(`🎯 [LocalGRF] Archivo resuelto mediante ruta alternativa coreana: ${alt}`);
+            break;
+          }
+        }
+      }
+
       if (!entry) return reject(new Error(`Archivo no encontrado en GRF local: ${path}`));
 
       const fileBlob = this.file.slice(entry.offset + 46, entry.offset + 46 + entry.compressedSize);
@@ -207,7 +272,6 @@ class LocalGRF {
         try {
           const compressed = new Uint8Array(e.target.result);
           const decompressed = pako.inflate(compressed);
-          // Retornar un Uint8Array limpio con offset 0 para evitar bugs al pasar bytes.buffer
           const cleanBytes = new Uint8Array(decompressed.buffer.slice(decompressed.byteOffset, decompressed.byteOffset + decompressed.byteLength));
           resolve(cleanBytes);
         } catch (err) { reject(err); }

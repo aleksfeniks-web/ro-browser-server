@@ -185,13 +185,53 @@ const GRF_PATH = `C:\\Users\\nh250032\\Downloads\\RagnarokMéxicoV1\\RagnarokMé
 let grfIndex = new Map();
 let grfFd = null;
 
+// Mapa de traducción bidireccional para términos coreanos en data.grf
+const KOREAN_TRANSLATION_MAP = {
+  '¸ó½ºÅÍ': '몬스터',
+  'ÀÎ°£Á·': '인간족',
+  '¸öÅë': '몸통',
+  '³²': '남',
+  '¿©': '여',
+  'ÃÊº¸ÀÚ_³²': '초보자_남',
+  'ÃÊº¸ÀÚ_¿©': '초보자_여',
+  '¸Ó¸®Åë': '머리통'
+};
+
+function getAlternativePaths(path) {
+  const alts = [];
+  
+  // 1. Traducir de windows-1252 a Hangeul (Coreano)
+  let alt1 = path;
+  let hasRep1 = false;
+  for (const [key, val] of Object.entries(KOREAN_TRANSLATION_MAP)) {
+    if (alt1.includes(key)) {
+      alt1 = alt1.replaceAll(key, val);
+      hasRep1 = true;
+    }
+  }
+  if (hasRep1) alts.push(alt1);
+
+  // 2. Traducir de Hangeul a windows-1252
+  let alt2 = path;
+  let hasRep2 = false;
+  for (const [key, val] of Object.entries(KOREAN_TRANSLATION_MAP)) {
+    if (alt2.includes(val)) {
+      alt2 = alt2.replaceAll(val, key);
+      hasRep2 = true;
+    }
+  }
+  if (hasRep2) alts.push(alt2);
+
+  return alts;
+}
+
 function initGRF() {
   if (!fs.existsSync(GRF_PATH)) {
     console.log('⚠️ [GRF] No se detectó data.grf en la ruta oficial. No se cargarán gráficos originales.');
     return;
   }
 
-  console.log('📦 [GRF] Detectado data.grf. Cargando índice de archivos en memoria...');
+  console.log('📦 [GRF] Leyendo data.grf y cargando índice de archivos dual (EUC-KR / Windows-1252)...');
   try {
     grfFd = fs.openSync(GRF_PATH, 'r');
     const headerBuffer = Buffer.alloc(46);
@@ -222,39 +262,54 @@ function initGRF() {
 
     const decompressed = zlib.inflateSync(compressedData);
     
-    // Parsear tabla de archivos
+    // Parsear tabla de archivos con decodificadores duales
     let offset = 0;
+    const decoder1252 = new TextDecoder('windows-1252');
+    const decoderEuc = new TextDecoder('euc-kr');
+
     for (let i = 0; i < filesCount; i++) {
       if (offset >= decompressed.length) break;
 
-      // Leer ruta
-      let filePath = '';
-      while (decompressed[offset] !== 0 && offset < decompressed.length) {
-        filePath += String.fromCharCode(decompressed[offset]);
-        offset++;
-      }
-      offset++; // saltar null
+      // Buscar terminador nulo de la ruta
+      const nextNull = decompressed.indexOf(0, offset);
+      if (nextNull === -1 || nextNull >= decompressed.length) break;
+
+      const rawBytes = decompressed.subarray(offset, nextNull);
+      offset = nextNull + 1; // saltar null
 
       if (offset + 17 > decompressed.length) break;
 
       const cLen = decompressed.readUInt32LE(offset);
       const uLen = decompressed.readUInt32LE(offset + 4);
-      const uLenAligned = decompressed.readUInt32LE(offset + 8);
       const flag = decompressed[offset + 12];
       const fileOffset = decompressed.readUInt32LE(offset + 13);
       offset += 17;
 
-      // Guardar en índice (usar minúsculas y barras normales)
-      const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
-      grfIndex.set(cleanPath, {
+      const entry = {
         offset: fileOffset,
         compressedSize: cLen,
         uncompressedSize: uLen,
         flag: flag
-      });
+      };
+
+      // 1. Indexar bajo decodificación Windows-1252
+      const filePath1252 = decoder1252.decode(rawBytes);
+      const cleanPath1252 = filePath1252.toLowerCase().replace(/\\/g, '/');
+      grfIndex.set(cleanPath1252, entry);
+
+      // 2. Indexar bajo decodificación EUC-KR (Coreano)
+      try {
+        const filePathEuc = decoderEuc.decode(rawBytes);
+        const cleanPathEuc = filePathEuc.toLowerCase().replace(/\\/g, '/');
+        if (cleanPathEuc !== cleanPath1252) {
+          grfIndex.set(cleanPathEuc, entry);
+        }
+      } catch (err) {
+        // Ignorar errores individuales si no contiene caracteres coreanos decodificables
+      }
     }
 
-    console.log(`✅ [GRF] Índice cargado correctamente. ${grfIndex.size} archivos indexados.`);
+    console.log(`✅ [GRF] Índice cargado correctamente con indexación dual. ${grfIndex.size} rutas indexadas.`);
   } catch (err) {
     console.error('❌ [GRF] Error al cargar data.grf:', err);
   }
@@ -302,7 +357,17 @@ app.get('/api/grf/file', (req, res) => {
 
   // 1. Intentar leer desde el GRF físico local primero si está disponible
   if (grfFd && grfIndex.size > 0) {
-    const entry = grfIndex.get(cleanPath);
+    let entry = grfIndex.get(cleanPath);
+
+    // Si no se encuentra, probar caminos alternativos coreanos
+    if (!entry) {
+      const alts = getAlternativePaths(cleanPath);
+      for (const alt of alts) {
+        entry = grfIndex.get(alt);
+        if (entry) break;
+      }
+    }
+
     if (entry) {
       try {
         const compressedData = Buffer.alloc(entry.compressedSize);
