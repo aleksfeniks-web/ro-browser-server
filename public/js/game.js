@@ -536,6 +536,7 @@ class Game {
         spriteObj.threeTextures = spriteObj.frames.map(canvas => {
           if (!canvas) return null;
           const tex = new THREE.CanvasTexture(canvas);
+          tex.generateMipmaps = false; // Desactivar mipmaps para compatibilidad con texturas NPOT (Non-Power-of-Two)
           tex.minFilter = THREE.NearestFilter;
           tex.magFilter = THREE.NearestFilter; // Mantener hermoso aspecto pixel-art retro!
           return tex;
@@ -555,6 +556,7 @@ class Game {
 
       const tex = spriteObj.threeTextures[frameIdx] || spriteObj.threeTextures[0];
       if (tex) {
+        tex.needsUpdate = true; // Forzar subida a la GPU
         sprite.material.map = tex;
         sprite.material.needsUpdate = true;
       }
@@ -567,6 +569,7 @@ class Game {
           headSpriteObj.threeTextures = headSpriteObj.frames.map(canvas => {
             if (!canvas) return null;
             const tex = new THREE.CanvasTexture(canvas);
+            tex.generateMipmaps = false; // Desactivar mipmaps para compatibilidad con texturas NPOT
             tex.minFilter = THREE.NearestFilter;
             tex.magFilter = THREE.NearestFilter;
             return tex;
@@ -576,6 +579,7 @@ class Game {
         const headFrameIdx = frameIdx % headSpriteObj.frames.length;
         const headTex = headSpriteObj.threeTextures[headFrameIdx] || headSpriteObj.threeTextures[0];
         if (headTex) {
+          headTex.needsUpdate = true; // Forzar subida a la GPU
           headSprite.material.map = headTex;
           headSprite.material.needsUpdate = true;
         }
