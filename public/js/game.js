@@ -119,17 +119,30 @@ class Game {
 
   async loadOriginalSprites() {
     console.log('🔄 [Sprites] Cargando sprites originales desde data.grf...');
-    try {
-      this.grfSprites.poring = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/poring.spr');
-      this.grfSprites.lunatic = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/lunatic.spr');
-      this.grfSprites.baphomet = await SprParser.loadAndParse('data/sprite/¸ó½ºÅÍ/baphomet_i.spr');
-      this.grfSprites.novice_male = await SprParser.loadAndParse('data/sprite/ÀÎ°£Á·/¸öÅë/³²/ÃÊº¸ÀÚ_³².spr');
-      this.grfSprites.novice_female = await SprParser.loadAndParse('data/sprite/ÀÎ°£Á·/¸öÅë/¿©/ÃÊº¸ÀÚ_¿©.spr');
-      
-      console.log('✅ [Sprites] Sprites originales cargados con éxito.');
-    } catch (err) {
-      console.warn('⚠️ [Sprites] No se pudieron cargar los sprites originales del GRF, usando fallbacks vectoriales:', err);
-    }
+    
+    // Cada sprite se carga independientemente para que un fallo no cancele los demás
+    const spriteLoads = [
+      { key: 'poring', path: 'data/sprite/¸ó½ºÅÍ/poring.spr' },
+      { key: 'lunatic', path: 'data/sprite/¸ó½ºÅÍ/lunatic.spr' },
+      { key: 'baphomet', path: 'data/sprite/¸ó½ºÅÍ/baphomet_i.spr' },
+      { key: 'novice_male', path: 'data/sprite/ÀÎ°£Á·/¸öÅë/³²/ÃÊº¸ÀÚ_³².spr' },
+      { key: 'novice_female', path: 'data/sprite/ÀÎ°£Á·/¸öÅë/¿©/ÃÊº¸ÀÚ_¿©.spr' }
+    ];
+
+    const results = await Promise.allSettled(
+      spriteLoads.map(async ({ key, path }) => {
+        try {
+          const spr = await SprParser.loadAndParse(path);
+          this.grfSprites[key] = spr;
+          console.log(`✅ [Sprites] ${key} cargado correctamente`);
+        } catch (err) {
+          console.warn(`⚠️ [Sprites] No se pudo cargar ${key} (${path}):`, err);
+        }
+      })
+    );
+
+    const loaded = Object.keys(this.grfSprites).filter(k => this.grfSprites[k] !== null);
+    console.log(`📦 [Sprites] ${loaded.length}/${spriteLoads.length} sprites cargados: ${loaded.join(', ')}`);
   }
 
   // --- Controles de Mouse & Movimiento ---
@@ -512,9 +525,24 @@ class Game {
       const isMale = char.gender !== 'F';
       spriteObj = isMale ? this.grfSprites.novice_male : this.grfSprites.novice_female;
 
-      // Intentar buscar cabeza en cache
+      // --- CARGA LAZY DE CABEZA (se dispara una vez y luego usa cache) ---
       const genderKey = char.gender === 'F' ? 'female' : 'male';
-      const cacheKey = `${genderKey}_${char.hair}`;
+      const cacheKey = `${genderKey}_${char.hair || 1}`;
+
+      if (this.grfHeadSprites[cacheKey] === undefined) {
+        this.grfHeadSprites[cacheKey] = null; // Marcar como "cargando"
+        const genderFolder = char.gender === 'F' ? '¿©' : '³²';
+        const sprPath = `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/${char.hair || 1}_${genderFolder}.spr`;
+        
+        SprParser.loadAndParse(sprPath).then(sObj => {
+          this.grfHeadSprites[cacheKey] = sObj;
+          console.log(`✅ [Head] Sprite de cabeza cargado para ${cacheKey}`);
+        }).catch(err => {
+          this.grfHeadSprites[cacheKey] = false; // Marcado como fallido, no reintentar
+          console.warn(`⚠️ [Head] No se pudo cargar cabeza para ${cacheKey}:`, err);
+        });
+      }
+
       const cached = this.grfHeadSprites[cacheKey];
       if (cached && cached.frames) {
         headSpriteObj = cached;
