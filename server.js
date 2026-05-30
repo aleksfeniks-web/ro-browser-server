@@ -300,7 +300,31 @@ app.get('/api/grf/file', (req, res) => {
 
   const cleanPath = filePath.toLowerCase().replace(/\\/g, '/');
 
-  // 1. Si existe un archivo pre-extraído en la carpeta public/, servirlo directamente
+  // 1. Intentar leer desde el GRF físico local primero si está disponible
+  if (grfFd && grfIndex.size > 0) {
+    const entry = grfIndex.get(cleanPath);
+    if (entry) {
+      try {
+        const compressedData = Buffer.alloc(entry.compressedSize);
+        fs.readSync(grfFd, compressedData, 0, entry.compressedSize, entry.offset + 46);
+        const decompressed = zlib.inflateSync(compressedData);
+        
+        let contentType = 'application/octet-stream';
+        if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
+        else if (cleanPath.endsWith('.png')) contentType = 'image/png';
+        else if (cleanPath.endsWith('.tga')) contentType = 'image/tga';
+        else if (cleanPath.endsWith('.wav')) contentType = 'audio/wav';
+        else if (cleanPath.endsWith('.mp3')) contentType = 'audio/mpeg';
+
+        res.setHeader('Content-Type', contentType);
+        return res.send(decompressed);
+      } catch (err) {
+        console.error(`Error al extraer ${filePath} del GRF:`, err);
+      }
+    }
+  }
+
+  // 2. Si no está en el GRF, intentar leer desde la carpeta public/ local como fallback
   const localPreExtractedPath = findFileCaseInsensitive(path.join(__dirname, 'public'), filePath);
 
   if (localPreExtractedPath) {
@@ -315,37 +339,7 @@ app.get('/api/grf/file', (req, res) => {
     return res.sendFile(localPreExtractedPath);
   }
 
-  // 2. Si no, intentar leer desde el GRF físico local (sólo en localhost)
-  if (!grfFd || grfIndex.size === 0) {
-    return res.status(503).send('Servicio de GRF no disponible en la nube.');
-  }
-
-  const entry = grfIndex.get(cleanPath);
-
-  if (!entry) {
-    return res.status(404).send(`Archivo no encontrado en GRF: ${filePath}`);
-  }
-
-  try {
-    const compressedData = Buffer.alloc(entry.compressedSize);
-    fs.readSync(grfFd, compressedData, 0, entry.compressedSize, entry.offset + 46);
-
-    const decompressed = zlib.inflateSync(compressedData);
-    
-    // Determinar content-type aproximado
-    let contentType = 'application/octet-stream';
-    if (cleanPath.endsWith('.bmp')) contentType = 'image/bmp';
-    else if (cleanPath.endsWith('.png')) contentType = 'image/png';
-    else if (cleanPath.endsWith('.tga')) contentType = 'image/tga';
-    else if (cleanPath.endsWith('.wav')) contentType = 'audio/wav';
-    else if (cleanPath.endsWith('.mp3')) contentType = 'audio/mpeg';
-
-    res.setHeader('Content-Type', contentType);
-    res.send(decompressed);
-  } catch (err) {
-    console.error(`Error al extraer ${filePath} del GRF:`, err);
-    res.status(500).send(`Error al extraer archivo: ${err.message}`);
-  }
+  return res.status(404).send(`Archivo no encontrado en GRF ni en public: ${filePath}`);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

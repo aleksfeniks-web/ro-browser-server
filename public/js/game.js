@@ -36,6 +36,7 @@ class Game {
       novice_male: null,
       novice_female: null
     };
+    this.grfHeadSprites = {};
 
     // Configurar Canvas
     this.resizeCanvas();
@@ -418,44 +419,75 @@ class Game {
         const headY = pos.y - sh + 14 * scale;
         const charColor = this.getHairColorHex(char.hairColor);
 
-        // Cara
-        ctx.fillStyle = '#fbc4b2';
-        ctx.beginPath();
-        ctx.arc(pos.x, headY, 5 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        const genderKey = char.gender === 'F' ? 'female' : 'male';
+        const cacheKey = `${genderKey}_${char.hair}`;
+        
+        if (this.grfHeadSprites[cacheKey] === undefined) {
+          this.grfHeadSprites[cacheKey] = null; // Marcar como cargando
+          const genderFolder = char.gender === 'F' ? '¿©' : '³²';
+          const sprPath = `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/${char.hair}_${genderFolder}.spr`;
+          
+          SprParser.loadAndParse(sprPath).then(sObj => {
+            this.grfHeadSprites[cacheKey] = sObj;
+            console.log(`✅ [Head] Sprite original de cabeza cargado para ${cacheKey}`);
+          }).catch(err => {
+            this.grfHeadSprites[cacheKey] = false; // Fallido
+            console.warn(`⚠️ [Head] No se pudo cargar cabeza para ${cacheKey}:`, err);
+          });
+        }
 
-        // Ojos
-        ctx.fillStyle = '#1e293b';
-        ctx.beginPath();
-        ctx.arc(pos.x - 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
-        ctx.arc(pos.x + 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        const headSpriteObj = this.grfHeadSprites[cacheKey];
+        if (headSpriteObj && headSpriteObj.frames && headSpriteObj.frames.length > 0) {
+          // Sincronizar el marco/dirección de la cabeza con el cuerpo
+          const headFrameIdx = frameIdx % headSpriteObj.frames.length;
+          const headFrame = headSpriteObj.frames[headFrameIdx] || headSpriteObj.frames[0];
+          if (headFrame) {
+            const hsw = headFrame.width * scale * 1.3;
+            const hsh = headFrame.height * scale * 1.3;
+            // Dibujar la cabeza real extraída del GRF
+            ctx.drawImage(headFrame, pos.x - hsw / 2, headY - hsh + 4 * scale, hsw, hsh);
+          }
+        } else {
+          // --- FALLBACK: PROCEDURAL HEAD ---
+          // Cara
+          ctx.fillStyle = '#fbc4b2';
+          ctx.beginPath();
+          ctx.arc(pos.x, headY, 5 * scale, 0, Math.PI * 2);
+          ctx.fill();
 
-        // Cabello según Estilo
-        ctx.fillStyle = charColor;
-        if (char.hair === 1) { // Cabello Largo
+          // Ojos
+          ctx.fillStyle = '#1e293b';
           ctx.beginPath();
-          ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
-          ctx.quadraticCurveTo(pos.x, headY - 8 * scale, pos.x + 6 * scale, headY + 1 * scale);
-          ctx.quadraticCurveTo(pos.x + 7 * scale, headY + 6 * scale, pos.x + 4 * scale, headY + 6 * scale);
-          ctx.lineTo(pos.x - 4 * scale, headY + 6 * scale);
-          ctx.closePath();
+          ctx.arc(pos.x - 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
+          ctx.arc(pos.x + 1.8 * scale, headY - 1 * scale, 0.7 * scale, 0, Math.PI * 2);
           ctx.fill();
-        } else if (char.hair === 2) { // Espinado (Punk)
-          ctx.beginPath();
-          ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
-          ctx.lineTo(pos.x - 8 * scale, headY - 4 * scale);
-          ctx.lineTo(pos.x - 3 * scale, headY - 3 * scale);
-          ctx.lineTo(pos.x, headY - 8 * scale);
-          ctx.lineTo(pos.x + 3 * scale, headY - 3 * scale);
-          ctx.lineTo(pos.x + 8 * scale, headY - 4 * scale);
-          ctx.lineTo(pos.x + 6 * scale, headY + 1 * scale);
-          ctx.closePath();
-          ctx.fill();
-        } else { // Cabello Corto
-          ctx.beginPath();
-          ctx.arc(pos.x, headY - 2 * scale, 5.5 * scale, Math.PI, 0, false);
-          ctx.fill();
+
+          // Cabello según Estilo
+          ctx.fillStyle = charColor;
+          if (char.hair === 1) { // Cabello Largo
+            ctx.beginPath();
+            ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
+            ctx.quadraticCurveTo(pos.x, headY - 8 * scale, pos.x + 6 * scale, headY + 1 * scale);
+            ctx.quadraticCurveTo(pos.x + 7 * scale, headY + 6 * scale, pos.x + 4 * scale, headY + 6 * scale);
+            ctx.lineTo(pos.x - 4 * scale, headY + 6 * scale);
+            ctx.closePath();
+            ctx.fill();
+          } else if (char.hair === 2) { // Espinado (Punk)
+            ctx.beginPath();
+            ctx.moveTo(pos.x - 6 * scale, headY + 1 * scale);
+            ctx.lineTo(pos.x - 8 * scale, headY - 4 * scale);
+            ctx.lineTo(pos.x - 3 * scale, headY - 3 * scale);
+            ctx.lineTo(pos.x, headY - 8 * scale);
+            ctx.lineTo(pos.x + 3 * scale, headY - 3 * scale);
+            ctx.lineTo(pos.x + 8 * scale, headY - 4 * scale);
+            ctx.lineTo(pos.x + 6 * scale, headY + 1 * scale);
+            ctx.closePath();
+            ctx.fill();
+          } else { // Cabello Corto
+            ctx.beginPath();
+            ctx.arc(pos.x, headY - 2 * scale, 5.5 * scale, Math.PI, 0, false);
+            ctx.fill();
+          }
         }
 
         // Sombrero si tiene (Poring Hat)
