@@ -14,6 +14,11 @@ class SoundManager {
     try {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       console.log('Web Audio Context inicializado.');
+      
+      // Auto-reproducir BGM sintetizada clásica si no está sonando en bucle
+      if (!this.bgmInterval) {
+        this.playBGM();
+      }
     } catch (e) {
       console.error('Web Audio API no soportada en este navegador.', e);
     }

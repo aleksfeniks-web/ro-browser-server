@@ -156,13 +156,15 @@ class Game {
             // Recortar último paso para no pararse encima
             path.pop();
             if (path.length > 0) {
-              this.localPlayer.targetX = path[path.length - 1].x;
-              this.localPlayer.targetY = path[path.length - 1].y;
-              this.localPlayer.startX = this.localPlayer.x;
-              this.localPlayer.startY = this.localPlayer.y;
+              this.localPlayer.path = path;
+              const nextStep = this.localPlayer.path.shift();
+              this.localPlayer.targetX = nextStep.x;
+              this.localPlayer.targetY = nextStep.y;
+              this.localPlayer.startX = Math.round(this.localPlayer.x);
+              this.localPlayer.startY = Math.round(this.localPlayer.y);
               this.localPlayer.lerpProgress = 0;
               this.localPlayer.state = 'moving';
-              this.network.sendMove(path);
+              this.network.sendMove([nextStep, ...this.localPlayer.path]);
             }
           }
         }
@@ -174,15 +176,17 @@ class Game {
     if (!Pathfinding.isBlocked(this.map.grid, gridPos.x, gridPos.y)) {
       const path = Pathfinding.findPath(this.map.grid, this.localPlayer, gridPos);
       if (path.length > 0) {
-        this.localPlayer.targetX = gridPos.x;
-        this.localPlayer.targetY = gridPos.y;
-        this.localPlayer.startX = this.localPlayer.x;
-        this.localPlayer.startY = this.localPlayer.y;
+        this.localPlayer.path = path;
+        const nextStep = this.localPlayer.path.shift();
+        this.localPlayer.targetX = nextStep.x;
+        this.localPlayer.targetY = nextStep.y;
+        this.localPlayer.startX = Math.round(this.localPlayer.x);
+        this.localPlayer.startY = Math.round(this.localPlayer.y);
         this.localPlayer.lerpProgress = 0;
         this.localPlayer.state = 'moving';
         
         // Enviar ruta calculada al servidor
-        this.network.sendMove(path);
+        this.network.sendMove([nextStep, ...this.localPlayer.path]);
 
         // Crear una pequeña onda visual de clic en el suelo
         this.particleEffects.push({
@@ -289,8 +293,19 @@ class Game {
     if (ent.lerpProgress >= 1.0) {
       ent.x = ent.targetX;
       ent.y = ent.targetY;
-      ent.lerpProgress = 1.0;
-      ent.state = 'idle';
+      
+      if (ent.path && ent.path.length > 0) {
+        const nextStep = ent.path.shift();
+        ent.startX = ent.x;
+        ent.startY = ent.y;
+        ent.targetX = nextStep.x;
+        ent.targetY = nextStep.y;
+        ent.lerpProgress = 0;
+        ent.state = 'moving';
+      } else {
+        ent.lerpProgress = 1.0;
+        ent.state = 'idle';
+      }
     } else {
       // Interpolación lineal
       ent.x = ent.startX + (ent.targetX - ent.startX) * ent.lerpProgress;

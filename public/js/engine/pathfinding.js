@@ -6,8 +6,13 @@ class Pathfinding {
     const width = mapGrid[0].length;
     const height = mapGrid.length;
 
+    const startX = Math.round(start.x);
+    const startY = Math.round(start.y);
+    const endX = Math.round(end.x);
+    const endY = Math.round(end.y);
+
     // Si el destino es bloqueado o igual al inicio, no hay ruta
-    if (this.isBlocked(mapGrid, end.x, end.y) || (start.x === end.x && start.y === end.y)) {
+    if (this.isBlocked(mapGrid, endX, endY) || (startX === endX && startY === endY)) {
       return [];
     }
 
@@ -15,10 +20,10 @@ class Pathfinding {
     const closedList = new Set();
 
     const startNode = {
-      x: start.x,
-      y: start.y,
+      x: startX,
+      y: startY,
       g: 0,
-      h: this.heuristic(start, end),
+      h: this.heuristic({ x: startX, y: startY }, { x: endX, y: endY }),
       f: 0,
       parent: null
     };
@@ -35,7 +40,7 @@ class Pathfinding {
       closedList.add(posKey);
 
       // Si llegó al destino
-      if (currentNode.x === end.x && currentNode.y === end.y) {
+      if (currentNode.x === endX && currentNode.y === endY) {
         const path = [];
         let curr = currentNode;
         while (curr.parent !== null) {
