@@ -532,9 +532,45 @@ class Game {
       if (this.grfHeadSprites[cacheKey] === undefined) {
         this.grfHeadSprites[cacheKey] = null; // Marcar como "cargando"
         const genderFolder = char.gender === 'F' ? '¿©' : '³²';
-        const sprPath = `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/${char.hair || 1}_${genderFolder}.spr`;
+        const hairNum = char.hair || 1;
         
-        SprParser.loadAndParse(sprPath).then(sObj => {
+        // Intentar múltiples variantes de ruta (diferentes versiones de GRF usan distintas convenciones)
+        const pathVariants = [
+          `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/${hairNum}_${genderFolder}.spr`,
+          `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/¸Ó¸®${hairNum}_${genderFolder}.spr`,
+          `data/sprite/ÀÎ°£Á·/¸Ó¸®Åë/${genderFolder}/head${hairNum}_${genderFolder}.spr`
+        ];
+        
+        const tryLoadHead = async () => {
+          // 1. Intentar cada variante de ruta
+          for (const sprPath of pathVariants) {
+            try {
+              const sObj = await SprParser.loadAndParse(sprPath);
+              return sObj;
+            } catch (e) {
+              // Continuar con siguiente variante
+            }
+          }
+          
+          // 2. Como último recurso, buscar en el índice del GRF por nombre parcial
+          if (window.localGRF && window.localGRF.isLoaded) {
+            const searchTerms = [`${hairNum}_${genderFolder}.spr`, `head${hairNum}`, `¸ó¸®${hairNum}`];
+            for (const term of searchTerms) {
+              const found = window.localGRF.searchFiles(term);
+              const headFile = found.find(f => f.includes('sprite') && (f.includes('¸ó¸®åë') || f.includes('머리통') || f.includes('head')));
+              if (headFile) {
+                console.log(`🔍 [Head] Encontrado vía búsqueda en índice GRF: ${headFile}`);
+                try {
+                  return await SprParser.loadAndParse(headFile);
+                } catch(e) { /* continuar */ }
+              }
+            }
+          }
+          
+          throw new Error('No se encontró sprite de cabeza en ninguna variante');
+        };
+        
+        tryLoadHead().then(sObj => {
           this.grfHeadSprites[cacheKey] = sObj;
           console.log(`✅ [Head] Sprite de cabeza cargado para ${cacheKey}`);
         }).catch(err => {

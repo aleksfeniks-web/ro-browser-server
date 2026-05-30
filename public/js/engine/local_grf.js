@@ -42,6 +42,11 @@ function getAlternativePaths(path) {
   }
   if (hasRep2) alts.push(alt2);
 
+  // 3. Variantes de nombre para sprites de cabeza
+  // Algunos GRFs usan backslash en vez de forward slash
+  const backslashVariant = path.replace(/\//g, '\\');
+  if (backslashVariant !== path) alts.push(backslashVariant);
+
   return alts;
 }
 
@@ -263,6 +268,21 @@ class LocalGRF {
         }
       }
 
+      // Búsqueda parcial/fuzzy: si la ruta exacta y alternativas fallan,
+      // buscar por nombre de archivo en todo el índice
+      if (!entry) {
+        const fileName = cleanPath.split('/').pop();
+        if (fileName) {
+          for (const [indexPath, indexEntry] of this.index) {
+            if (indexPath.endsWith('/' + fileName) || indexPath.endsWith('\\' + fileName)) {
+              entry = indexEntry;
+              console.log(`🔍 [LocalGRF] Encontrado por búsqueda parcial: ${indexPath} (buscando: ${path})`);
+              break;
+            }
+          }
+        }
+      }
+
       if (!entry) return reject(new Error(`Archivo no encontrado en GRF local: ${path}`));
 
       const fileBlob = this.file.slice(entry.offset + 46, entry.offset + 46 + entry.compressedSize);
@@ -279,6 +299,18 @@ class LocalGRF {
       reader.onerror = (err) => reject(err);
       reader.readAsArrayBuffer(fileBlob);
     });
+  }
+
+  // Método de diagnóstico: busca archivos en el índice por patrón
+  searchFiles(pattern) {
+    const results = [];
+    const lowerPattern = pattern.toLowerCase();
+    for (const [path] of this.index) {
+      if (path.includes(lowerPattern)) {
+        results.push(path);
+      }
+    }
+    return results;
   }
 }
 
